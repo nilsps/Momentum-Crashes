@@ -3,16 +3,193 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
 ```{r}
-plot(cars)
+#install.packages("Quandl")
+library(tidyquant)
+library(tidyverse)
+library(quantmod)
+library(Quandl)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(zoo)
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+Getting dataset from https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html as described in MC paper.
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+
+#Loading Kenneth french databases Average Value Weighted Returns -- Monthly
+kf_monthly = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\10_Portfolios_Prior_12_2.CSV", header= TRUE, sep = ",")
+
+#Loading Kenneth french databases Average Value Weighted Returns -- daily
+kf_daily = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\10_Portfolios_Prior_12_2_daily.CSV", header= TRUE, sep = ",")
+```
+
+
+Dataset prepping 
+```{r}
+kf_monthly$X= paste(kf_monthly$X, "01", sep = '') # adding the first in a month to the date for easier processing
+kf_monthly = transform(kf_monthly,X=as.Date(as.character(X),"%Y%m%d")) # converting X (dates) to date format
+names(kf_monthly)[1]<-paste("Date") # changing name from X to Date to avoid confusion.
+kf_monthly = kf_monthly %>% na.omit()
+
+chars = sapply(kf_monthly, is.character) # Prepping to turn all data from char to num. 
+kf_monthly[ , chars] = as.data.frame(apply(kf_monthly[ , chars], 2, as.numeric))
+
+head(kf_monthly) # checking data
+```
+
+
+```{r}
+  ggplot(kf_monthly, aes(x = Date)) +
+    geom_line(aes(y = Lo.PRIOR), color = "darkred") + 
+    geom_line(aes(y = PRIOR.2), color = "blue")
+    labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+  theme_classic() +
+  scale_y_continuous(breaks = seq(-1000,100,1000)) +
+  scale_x_date(date_breaks = '10 year',
+               date_labels = '%Y')
+```
+
+
+Prepping daily dataset
+```{r}
+kf_daily = transform(kf_daily,X=as.Date(as.character(X),"%Y%m%d")) # converting X (dates) to date format
+names(kf_daily)[1]<-paste("Date") # changing name from X to Date to avoid confusion.
+kf_daily = kf_daily %>% na.omit()
+
+chars = sapply(kf_daily, is.character) # Prepping to turn all data from char to num. 
+kf_daily[ , chars] = as.data.frame(apply(kf_daily[ , chars], 2, as.numeric))
+
+head(kf_daily)
+```
+```{r}
+  ggplot(kf_daily, aes(Date,Lo.PRIOR)) +
+    geom_line(aes(y = Lo.PRIOR), color = "darkred") +
+    geom_line(aes(y = PRIOR.2), color = "blue") +
+    labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+  theme_classic() +
+  scale_y_continuous(breaks = seq(-15,40,5)) +
+  scale_x_date(date_breaks = '10 year',
+               date_labels = '%Y')
+```
+
+
+
+# ```{r}
+# Quandl.api_key("QnDmM5cUPLz3z6XAw5Uy") #Personal key -Nils
+# Quandl('BSE/BOM504991')
+# ```
+
+<!-- # Import documentation for Quandl can be found here https://docs.data.nasdaq.com/ -->
+<!-- ```{r} -->
+<!-- mydata = Quandl("FRED/GDP", start_date="2001-12-31", end_date="2005-12-31") -->
+
+<!-- mydataHK = Quandl("HKEX/00001") -->
+<!-- ``` -->
+
+No use for quandl as it is implemented in tidyquant package. 
+Manual for tq can be found here 
+https://cran.r-project.org/web/packages/tidyquant/vignettes/TQ01-core-functions-in-tidyquant.html
+
+```{r}
+#tickers = c('BND', 'VB', 'VEA', 'VOO', 'VWO', 'aapl', 'msft')
+
+#Old stocks pre year 1911
+tickers = c('xom', 'ge', 'cvx', 'ibm', 'cl', 'pg', 'jnj', 'jpm','pfe', 'ko', 'wfc', 'c', 'bac', 'mrk', 'pep', 'abt', 'gs', 'ups', 'mmm', 'axp', 'f', 'cvs', 'usb', 'unp', 'bmy', 'dd', 'met', 'lly', 'dow', 'EMR')
+
+# Asset weights
+
+wts = c(0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033) #All weights sett to 1/30, due to copy paste
+
+price_data <- tq_get(tickers,
+                     from = '1969-01-01',
+                     to = '2020-12-31',
+                     get = 'stock.prices')
+
+ret_data <- price_data %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted, #NB! always use adjusted! Due to close does not take into considiration stocksplits dividents etc. 
+               mutate_fun = periodReturn,
+               period = "daily",
+               col_rename = "ret")
+
+wts_tbl <- tibble(symbol = tickers,
+                  wts = wts)
+ret_data <- left_join(ret_data,wts_tbl, by = 'symbol')
+
+ret_data <- ret_data %>%
+  mutate(wt_return = wts * ret)
+
+port_ret <- ret_data %>%
+  group_by(date) %>%
+  summarise(port_ret = sum(wt_return))
+
+port_cumulative_ret <- port_ret %>%
+  mutate(cr = cumprod(1 + port_ret))
+```
+
+```{r}
+# same as above just shorter ad prettier
+RLS = NULL
+RSS = NULL
+RFT = NULL
+
+
+port_ret_tidyquant <- ret_data %>%
+  tq_portfolio(assets_col = symbol,
+               returns_col = ret,
+               weights = wts,
+               col_rename = 'port_ret',
+               geometric = FALSE)
+# Cumalative return calculation p.23 eq. 12-14 in MC paper 
+port_cumulative_ret_tidyquant <- port_ret_tidyquant %>%
+  mutate(cr = cumprod(1 + port_ret)-1) %>%
+  mutate(logret = cumsum(log(1+port_ret)))  #%>%
+  #mutate(longshort = cumprod(1+RLS+RSS+RFT)-1)  # RLS = return long side of pf RSS = ret short side RFT = return risk free rate 
+```
+
+```{r}
+port_cumulative_ret %>%
+  mutate(port_ret_tidyquant = port_cumulative_ret_tidyquant$cr) %>%
+  select(-port_ret) %>%
+  rename(long_method = cr) %>%
+  gather(long_method,port_ret_tidyquant,
+         key = port_method,
+         value = cr) %>%
+  ggplot(aes(x = date, y = cr, color = port_method)) +
+  geom_line() +
+  labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+  theme_classic() +
+  scale_y_continuous(breaks = seq(0,600,25)) +
+  scale_x_date(date_breaks = 'year',
+               date_labels = '%Y')
+```
+
+```{r}
+#lag(adjClose) / lag(adjClose, 12) - 1)
+#formula for adjusted return
+```
+
+
+```{r}
+#Return.cumulative(port_cumulative_ret$cr, geometric = FALSE) #OBJECT placeholder is data to calculate!
+```
+
+Docs can be found at https://www.rdocumentation.org/packages/PerformanceAnalytics/versions/2.0.4/topics/Return.cumulative. For this exercise this is equal to the equation p.23 eq. 12. Geometric is set to false to provide arithmatic returns 
+
+More on cumalative return calculations can be found here https://www.codingfinance.com/post/2018-04-10-cumulative-portfolio-returns/
+```{r}
+
+```
+
+
+Sharp ratio https://cran.r-project.org/web/packages/SharpeR/vignettes/SharpeR.pdf
