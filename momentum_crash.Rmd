@@ -18,6 +18,8 @@ library(zoo)
 
 Getting dataset from https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html as described in MC paper.
 
+Code loads from "my" computer, switch string to load from yours.
+Both files contain Value weighted returns. 
 ```{r}
 
 #Loading Kenneth french databases Average Value Weighted Returns -- Monthly
@@ -40,47 +42,93 @@ kf_monthly[ , chars] = as.data.frame(apply(kf_monthly[ , chars], 2, as.numeric))
 
 head(kf_monthly) # checking data
 ```
+The kf_monthly dataset is very strange!!!! Beaware of wierd numbers!!!!!
+```{r}
+kf_monthly = kf_monthly %>% 
+  mutate(Ret_lo.prior = 1+cumprod(1 + (Lo.PRIOR/100))-1)
+  
+head(kf_monthly)  
+```
 
+
+
+
+Plotting portfolio data with smoothing, or else graphs looks like crap. 
 
 ```{r}
   ggplot(kf_monthly, aes(x = Date)) +
-    geom_line(aes(y = Lo.PRIOR), color = "darkred") + 
-    geom_line(aes(y = PRIOR.2), color = "blue")
+    geom_smooth(aes(y = Lo.PRIOR), color = "darkred") +
+    geom_smooth(aes(y = PRIOR.2), color = "blue") +
+    geom_smooth(aes(y = PRIOR.3), color = "green") +
+    geom_smooth(aes(y = PRIOR.4), color = "orange") +
+    geom_smooth(aes(y = PRIOR.5), color = "red") +
+    geom_smooth(aes(y = PRIOR.6), color = "purple") +
+    geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
+    geom_smooth(aes(y = PRIOR.8), color = "gray") +
+    geom_smooth(aes(y = PRIOR.9), color = "black") +
+    geom_smooth(aes(y = Hi.PRIOR), color = "Yellow") +
     labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-  theme_classic() +
-  scale_y_continuous(breaks = seq(-1000,100,1000)) +
+  #theme_classic() +
+  scale_y_continuous(breaks = seq(-10,10000,500)) +
   scale_x_date(date_breaks = '10 year',
-               date_labels = '%Y')
+               date_labels = '%Y')#,
+               #limits = as.Date(c('2011-01-01','2013-01-01')))
 ```
 
 
-Prepping daily dataset
+Prepping daily datasets
 ```{r}
 kf_daily = transform(kf_daily,X=as.Date(as.character(X),"%Y%m%d")) # converting X (dates) to date format
 names(kf_daily)[1]<-paste("Date") # changing name from X to Date to avoid confusion.
-kf_daily = kf_daily %>% na.omit()
+kf_daily = kf_daily %>% na.omit() # omits NAs in the set
 
 chars = sapply(kf_daily, is.character) # Prepping to turn all data from char to num. 
-kf_daily[ , chars] = as.data.frame(apply(kf_daily[ , chars], 2, as.numeric))
+kf_daily[ , chars] = as.data.frame(apply(kf_daily[ , chars], 2, as.numeric)) # converting the cols to num
 
+head(kf_daily) # recheck 
+```
+Wtf? 
+something is wrong here
+
+```{r}
+kf_daily = kf_daily %>% 
+  mutate(Ret_lo.prior = cumprod(1+(Lo.PRIOR/100)))
+  
 head(kf_daily)
 ```
+
+daily data ploting, need geom_smooth to avoid shitty looking graph
+
 ```{r}
-  ggplot(kf_daily, aes(Date,Lo.PRIOR)) +
-    geom_line(aes(y = Lo.PRIOR), color = "darkred") +
-    geom_line(aes(y = PRIOR.2), color = "blue") +
+  ggplot(kf_daily, aes(x = Date)) +
+    geom_smooth(aes(y = Lo.PRIOR), color = "darkred") + 
+    geom_smooth(aes(y = PRIOR.2), color = "blue") +
+    geom_smooth(aes(y = PRIOR.3), color = "green") +
+    geom_smooth(aes(y = PRIOR.4), color = "orange") +
+    geom_smooth(aes(y = PRIOR.5), color = "red") +
+    geom_smooth(aes(y = PRIOR.6), color = "purple") +
+    geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
+    geom_smooth(aes(y = PRIOR.8), color = "gray") +
+    geom_smooth(aes(y = PRIOR.9), color = "black") +
+    geom_smooth(aes(y = Hi.PRIOR), color = "Yellow") +
     labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-  theme_classic() +
-  scale_y_continuous(breaks = seq(-15,40,5)) +
-  scale_x_date(date_breaks = '10 year',
-               date_labels = '%Y')
+    #theme_classic() +
+  scale_y_continuous(breaks = seq(-30,50,10)) +
+  scale_x_date()#date_breaks = '10 year',
+               #date_labels = '%Y')
 ```
 
 
+
+########################
+###
+### Below this line, own implementations of calculations, in regards to momentum.
+###                       NOT DONE! Work in progress.
+########################
 
 # ```{r}
 # Quandl.api_key("QnDmM5cUPLz3z6XAw5Uy") #Personal key -Nils
@@ -187,9 +235,6 @@ port_cumulative_ret %>%
 Docs can be found at https://www.rdocumentation.org/packages/PerformanceAnalytics/versions/2.0.4/topics/Return.cumulative. For this exercise this is equal to the equation p.23 eq. 12. Geometric is set to false to provide arithmatic returns 
 
 More on cumalative return calculations can be found here https://www.codingfinance.com/post/2018-04-10-cumulative-portfolio-returns/
-```{r}
-
-```
 
 
 Sharp ratio https://cran.r-project.org/web/packages/SharpeR/vignettes/SharpeR.pdf
