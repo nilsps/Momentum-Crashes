@@ -23,10 +23,10 @@ Both files contain Value weighted returns.
 ```{r}
 
 #Loading Kenneth french databases Average Value Weighted Returns -- Monthly
-kf_monthly = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\10_Portfolios_Prior_12_2.CSV", header= TRUE, sep = ",")
+kf_monthly = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\mod_10_Portfolios_Prior_12_2.CSV", header= TRUE, sep = ",")
 
 #Loading Kenneth french databases Average Value Weighted Returns -- daily
-kf_daily = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\10_Portfolios_Prior_12_2_daily.CSV", header= TRUE, sep = ",")
+kf_daily = read.csv("C:\\Users\\nilsp\\Dropbox\\Skole 2020 - 2021\\Machinelearning 1\\MomentumCrash\\momcrash\\mod_10_Portfolios_Prior_12_2_daily.CSV", header= TRUE, sep = ",")
 ```
 
 
@@ -42,12 +42,14 @@ kf_monthly[ , chars] = as.data.frame(apply(kf_monthly[ , chars], 2, as.numeric))
 
 head(kf_monthly) # checking data
 ```
-The kf_monthly dataset is very strange!!!! Beaware of wierd numbers!!!!!
+
 ```{r}
 kf_monthly = kf_monthly %>% 
-  mutate(Ret_lo.prior = 1+cumprod(1 + (Lo.PRIOR/100))-1)
+  #mutate(Ret_lo.prior = 1+cumprod(1 + (Lo.PRIOR/100))-1)
+  mutate(cr_lo.prior = cumprod(1 + (Lo.PRIOR/100))) %>% 
+  mutate(cr_hi.prior = cumprod(1 + (Hi.PRIOR/100)))
   
-head(kf_monthly)  
+summary(kf_monthly)  
 ```
 
 
@@ -57,21 +59,21 @@ Plotting portfolio data with smoothing, or else graphs looks like crap.
 
 ```{r}
   ggplot(kf_monthly, aes(x = Date)) +
-    geom_smooth(aes(y = Lo.PRIOR), color = "darkred") +
-    geom_smooth(aes(y = PRIOR.2), color = "blue") +
-    geom_smooth(aes(y = PRIOR.3), color = "green") +
-    geom_smooth(aes(y = PRIOR.4), color = "orange") +
-    geom_smooth(aes(y = PRIOR.5), color = "red") +
-    geom_smooth(aes(y = PRIOR.6), color = "purple") +
-    geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
-    geom_smooth(aes(y = PRIOR.8), color = "gray") +
-    geom_smooth(aes(y = PRIOR.9), color = "black") +
-    geom_smooth(aes(y = Hi.PRIOR), color = "Yellow") +
+    geom_smooth(aes(y = cr_lo.prior), color = "darkred") +
+    # geom_smooth(aes(y = PRIOR.2), color = "blue") +
+    # geom_smooth(aes(y = PRIOR.3), color = "green") +
+    # geom_smooth(aes(y = PRIOR.4), color = "orange") +
+    # geom_smooth(aes(y = PRIOR.5), color = "red") +
+    # geom_smooth(aes(y = PRIOR.6), color = "purple") +
+    # geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
+    # geom_smooth(aes(y = PRIOR.8), color = "gray") +
+    # geom_smooth(aes(y = PRIOR.9), color = "black") +
+    geom_smooth(aes(y = cr_hi.prior), color = "Blue") +
     labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
   #theme_classic() +
-  scale_y_continuous(breaks = seq(-10,10000,500)) +
+  scale_y_continuous(breaks = seq(0,100,5000)) +
   scale_x_date(date_breaks = '10 year',
                date_labels = '%Y')#,
                #limits = as.Date(c('2011-01-01','2013-01-01')))
@@ -94,30 +96,31 @@ something is wrong here
 
 ```{r}
 kf_daily = kf_daily %>% 
-  mutate(Ret_lo.prior = cumprod(1+(Lo.PRIOR/100)))
-  
-head(kf_daily)
+  mutate(cr_lo.prior = cumprod(1 + (Lo.PRIOR/100))) %>% 
+  mutate(cr_hi.prior = cumprod(1 + (Hi.PRIOR/100)))
+summary(kf_daily)
 ```
 
 daily data ploting, need geom_smooth to avoid shitty looking graph
 
 ```{r}
   ggplot(kf_daily, aes(x = Date)) +
-    geom_smooth(aes(y = Lo.PRIOR), color = "darkred") + 
-    geom_smooth(aes(y = PRIOR.2), color = "blue") +
-    geom_smooth(aes(y = PRIOR.3), color = "green") +
-    geom_smooth(aes(y = PRIOR.4), color = "orange") +
-    geom_smooth(aes(y = PRIOR.5), color = "red") +
-    geom_smooth(aes(y = PRIOR.6), color = "purple") +
-    geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
-    geom_smooth(aes(y = PRIOR.8), color = "gray") +
-    geom_smooth(aes(y = PRIOR.9), color = "black") +
-    geom_smooth(aes(y = Hi.PRIOR), color = "Yellow") +
+    theme(legend.position = "top") +
+    geom_smooth(aes(y = cr_lo.prior), color = "darkred") + 
+    # geom_smooth(aes(y = PRIOR.2), color = "blue") +
+    # geom_smooth(aes(y = PRIOR.3), color = "green") +
+    # geom_smooth(aes(y = PRIOR.4), color = "orange") +
+    # geom_smooth(aes(y = PRIOR.5), color = "red") +
+    # geom_smooth(aes(y = PRIOR.6), color = "purple") +
+    # geom_smooth(aes(y = PRIOR.7), color = "darkblue") +
+    # geom_smooth(aes(y = PRIOR.8), color = "gray") +
+    # geom_smooth(aes(y = PRIOR.9), color = "black") +
+    geom_smooth(aes(y = cr_hi.prior), color = "darkgreen") +
     labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
     #theme_classic() +
-  scale_y_continuous(breaks = seq(-30,50,10)) +
+  scale_y_continuous(breaks = seq(0,1300000,100000)) +
   scale_x_date()#date_breaks = '10 year',
                #date_labels = '%Y')
 ```
