@@ -2,12 +2,20 @@
 library(dplyr)
 library(data.table)
 library(tidyverse)
+```
 
-stockdat_short = ret_data
+```{r}
+stockdat_short = price_data %>% 
+  rename(
+    ADJPRC = colnames(price_data[length(price_data)]),
+    PRC = colnames(price_data[length(price_data)-2])
+  )
 ```
 
 
 ```{r}
+CRSP_Stocks_Momentum = NULL
+
 PS3_Q1 <- function(CRSP_Stocks){
   # taking universe with NYSE, Amex and Nasdaq exchanged stocks
   # only using returns of common shares
@@ -83,7 +91,7 @@ PS3_Q1 <- function(CRSP_Stocks){
   return(CRSP_Stocks_Momentum)
 }
 
-PS3_Q1(stockdat_short)
+CRSP_Stocks_Momentum = PS3_Q1(stockdat_short)
 ```
 
 ```{r}

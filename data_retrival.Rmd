@@ -1,0 +1,137 @@
+```{r}
+library(tidyquant)
+library(tidyverse)
+library(dplyr)
+library(rvest)
+library(Quandl)
+library(foreach)
+library(doParallel)
+library(snow)
+library(doSNOW)
+library(plyr)
+```
+
+
+```{r}
+Quandl.api_key("QnDmM5cUPLz3z6XAw5Uy") #Personal key -Nils
+Quandl('BSE/BOM504991')
+```
+
+```{r}
+cl <- makeCluster(detectCores()-1, type = "SOCK")
+
+call_cluster_init = function(cl){
+  library(doParallel)
+  library(snow)
+  library(doSNOW)
+  registerDoParallel(cl)
+}
+```
+
+```{r}
+
+nyse = tq_exchange("NYSE")
+nasdaq = tq_exchange("NASDAQ")
+amex = tq_exchange("AMEX")
+
+all_ticks = rbind(nyse,nasdaq,amex) 
+all_ticks = all_ticks$symbol
+```
+```{r, defining function for getting stocks}
+# Defining the function, this function will retrieve all the stock tickers found above 
+
+funk_df = function(i,list_of_tickers){tq_get(list_of_tickers[i], 
+                     from = '2021-05-30',
+                     to = '2021-05-31',
+                     get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data') 
+                     }
+```
+
+```{r, find autotuned all primary filtred features for rpart}
+total_loop_time = proc.time() #Starts timer 
+
+tot_df = NULL # creates an empty variable
+
+call_cluster_init() # Calling the cluster to do parallel processing 
+
+total_loop_time = proc.time() #Starts timer 
+
+tot_df = foreach (i = 1:length(all_ticks[1:50]), .packages = "tidyverse") %dopar% {
+  funk = funk_df(i,all_ticks)
+  Sys.sleep(0.001)
+  return(as.data.frame(funk))
+}
+
+tot_df = ldply(tot_df) #converting from large list to data frame
+
+proc.time() - total_loop_time #stops timer                    
+
+
+stopCluster(cl)
+
+save(tot_df, file="tot_df.Rdata")
+```
+   
+
+```{r, warning=FALSE}
+nyse <- tq_exchange("NYSE")
+nasdaq <- tq_exchange("NASDAQ")
+amex <- tq_exchange("AMEX")
+
+tot_df = tq_get(unique(total_tics),
+                     from = '2020-01-01',
+                     to = '2021-05-31',
+                     get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
+                     
+save(tot_df, file="tot_df.Rdata")
+```
+
+```{r}
+price_data2 <- tq_get(tickers,
+                     from = '2020-01-01',
+                     to = '2021-12-31',
+                     get = "financials") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
+View(price_data2)
+```
+
+```{r}
+#tickers = c('BND', 'VB', 'VEA', 'VOO', 'VWO', 'aapl', 'msft')
+
+#Old stocks pre year 1911
+tickers = c('xom', 'ge', 'cvx', 'ibm', 'cl', 'pg', 'jnj', 'jpm','pfe', 'ko', 'wfc', 'c', 'bac', 'mrk', 'pep', 'abt', 'gs', 'ups', 'mmm', 'axp', 'f', 'cvs', 'usb', 'unp', 'bmy', 'dd', 'met', 'lly', 'dow', 'EMR')
+
+# Asset weights
+tick_leng = 1/length(tickers)
+eq_wts = c(rep(tick_leng, length(tickers))) # Creates a 1/n weighting
+
+wts = c(0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033) #All weights sett to 1/30, due to copy paste
+
+price_data <- tq_get(tickers,
+                     from = '1969-01-01',
+                     to = '2020-12-31',
+                     get = "economic.data") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
+
+ret_data <- price_data %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted, #NB! always use adjusted! Due to close does not take into considiration stocksplits dividents etc. 
+               mutate_fun = periodReturn,
+               period = "daily",
+               col_rename = "ret")
+
+wts_tbl <- tibble(symbol = tickers,
+                  wts = wts)
+ret_data <- left_join(ret_data,wts_tbl, by = 'symbol')
+
+ret_data <- ret_data %>%
+  mutate(wt_return = wts * ret)
+
+port_ret <- ret_data %>%
+  group_by(date) %>%
+  summarise(port_ret = sum(wt_return))
+
+port_cumulative_ret <- port_ret %>%
+  mutate(cr = cumprod(1 + port_ret))
+
+save(ret_data, file="ret_data.Rdata")
+```
+
