@@ -1,0 +1,164 @@
+```{r}
+library(dplyr)
+library(data.table)
+library(tidyverse)
+
+stockdat_short = ret_data
+```
+
+
+```{r}
+PS3_Q1 <- function(CRSP_Stocks){
+  # taking universe with NYSE, Amex and Nasdaq exchanged stocks
+  # only using returns of common shares
+  universe = stockdat_short 
+    #CRSP_Stocks[(EXCHCD %in% c(1, 2, 3)) & (SHRCD %in% c(10, 11)),]
+  
+  # filter out the duplicates in the sample
+  setkey(universe, NULL)
+  unique_universe <- unique(universe)
+  
+  # using valid shares and price
+  shrs_prc_universe <- unique_universe[, ADJPRC := abs(PRC)]
+  ## pre-filter out the invalid prc and shrs ?? (let's check this later by push this down)
+  shrs_prc_universe <- shrs_prc_universe[(ADJPRC > 0) & (SHROUT > 0), ]
+  # extract year and month from date
+  shrs_prc_universe[, c("Year", "Month") := list(year(date), month(date))]
+  # calculate market capitalization in millions
+  shrs_prc_universe[, mkc := ADJPRC * SHROUT / 1000]
+  # get 1-month lag market capitalization
+  shrs_prc_universe[, YM := as.yearmon(date)]
+  shrs_prc_universe[, shifted_YM_1 := shift(YM), by = .(PERMNO)]
+  shrs_prc_universe[, lag_Mkt_Cap_flag := ifelse(YM-1/12 == shifted_YM_1, 1, 0)]
+  shrs_prc_universe[, lag_Mkt_Cap := ifelse(lag_Mkt_Cap_flag == 1, shift(mkc), NA)]
+  
+  # get t-13 month price
+  shrs_prc_universe[, shifted_YM_13 := shift(YM, 13), by = .(PERMNO)]
+  shrs_prc_universe[, lag_adjprc_flag := ifelse(YM-13/12 == shifted_YM_13, 1, 0)]
+  shrs_prc_universe[, lag_adjprc := ifelse(lag_adjprc_flag == 1, shift(ADJPRC, 13), NA)]
+  
+  # calculate combined return using holding period return and delisting return
+  ret_universe <- shrs_prc_universe[, .(PERMNO, EXCHCD, RET, DLRET, Year, Month, YM, lag_Mkt_Cap, lag_adjprc)]
+  ret_universe[, c("RET", "DLRET") := list(as.numeric(RET), as.numeric(DLRET))]
+  ret_universe[, RET := ifelse(is.na(RET), -99, RET)]
+  ret_universe[, DLRET := ifelse(is.na(DLRET), -99, DLRET)]
+  ret_universe[, adjret := ifelse(RET != -99, ifelse(DLRET != -99, (1+RET)*(1+DLRET)-1, RET), 
+                                  ifelse(DLRET != -99, DLRET, NA))]
+  
+  formation_universe <- ret_universe[, .(PERMNO, EXCHCD, Year, Month, YM, lag_Mkt_Cap, adjret, lag_adjprc)]
+  #check how many valid months in previous 12 months
+  for(i in 1:12){
+    # get shifted month and return
+    formation_universe[, paste0("shifted_YM_", i) := shift(YM, i), by = .(PERMNO)]
+    formation_universe[, paste0("shifted_ret_", i) := shift(adjret, i), by = .(PERMNO)]
+    
+    # check if there is return in previous month
+    formation_universe[, paste0("shifted_flag_", i) := ifelse((YM-i/12 == eval(parse(text=paste0("shifted_YM_", i)))) 
+                                                              & !is.na(eval(parse(text=paste0("shifted_ret_", i)))), 1, 0)]
+    
+    # remove the columns
+    formation_universe[, paste0("shifted_YM_", i) := NULL]
+    formation_universe[, paste0("shifted_ret_", i) := NULL]
+  }
+  
+  # count the number of valid flag over month t-12 to month t-2
+  formation_universe[, formation_flag := Reduce(`+`, .SD), .SDcols = paste0("shifted_flag_", 2:12)]
+  
+  # check if valid to include into portfolio
+  ## At least 8 months of return data between t−12 and t−2
+  ## return on month t-12 and month t-2 exist
+  formation_universe[, if_include := ifelse((formation_flag >= 8) & 
+                                              (shifted_flag_2 == 1) & 
+                                              (shifted_flag_12 == 1) & 
+                                              (!is.na(lag_Mkt_Cap)) &
+                                              (!is.na(lag_adjprc)),
+                                            1, 0)]
+  
+  # calculate ranking return
+  ## use prod(x) and get log of the cumulative return
+  formation_universe[, plus_ret := adjret+1]
+  formation_universe[, Ranking_Ret := ifelse(if_include, log(Reduce(`*` , shift(plus_ret, 2:12))), NA)]
+  
+  CRSP_Stocks_Momentum <- na.omit(formation_universe[, .(Year, Month, PERMNO, EXCHCD, lag_Mkt_Cap, Ret=adjret, Ranking_Ret)])
+  return(CRSP_Stocks_Momentum)
+}
+
+PS3_Q1(stockdat_short)
+```
+
+```{r}
+PS3_Q2 <- function(CRSP_Stocks_Momentum){
+  # DM decile quantile calculator
+  DM_GetPortNums <- function(x) {
+    as.integer(cut(x,
+                   quantile(x, probs=0:10/10, na.rm = TRUE),
+                   include.lowest=T))
+  }
+  
+  CRSP_Stocks_Momentum_decile <- copy(CRSP_Stocks_Momentum)
+  # divide by DM decile for equal stocks for all exchange code
+  CRSP_Stocks_Momentum_decile[, DM_decile := DM_GetPortNums(Ranking_Ret), by = .(Year, Month)]
+  
+  # divide by KRF decile for equal stock for exchange code == 1 (NYSE)
+  KRF_GetPortNums <- function(x){
+    min1 <- min(x[EXCHCD==1, Ranking_Ret])
+    max1 <- max(x[EXCHCD==1, Ranking_Ret])
+    min <- min(x$Ranking_Ret)
+    max <- max(x$Ranking_Ret)
+    
+    if(min1 >= min){
+      if(max1 <= max){
+        fitted_quantile <- c(min-1, quantile(x[EXCHCD==1, Ranking_Ret], probs=0:10/10, na.rm = TRUE)[2:10], max+1)
+      }else{
+        fitted_quantile <- c(min-1, quantile(x[EXCHCD==1, Ranking_Ret], probs=0:10/10, na.rm = TRUE)[2:11])
+      }
+    }else{
+      if(max1 <= max){
+        fitted_quantile <- c(quantile(x[EXCHCD==1, Ranking_Ret], probs=0:10/10, na.rm = TRUE)[1:10], max+1)
+      }else{
+        fitted_quantile <- quantile(x[EXCHCD==1, Ranking_Ret], probs=0:10/10, na.rm = TRUE)
+      }
+    }
+    as.integer(cut(x$Ranking_Ret, 
+                   fitted_quantile, 
+                   include.lowest = T)) ## !! have to update the quantile for each YM
+    ## need modification so that the top and bottom quantile is inf
+    ## sol: first find min and max of EXCHCD==1 and global min and max
+  }
+  CRSP_Stocks_Momentum_decile[, KRF_decile := KRF_GetPortNums(.SD), by = .(Year, Month)]
+  CRSP_Stocks_Momentum_decile[, Ranking_Ret := NULL]
+  CRSP_Stocks_Momentum_decile[, EXCHCD := NULL]
+  return(CRSP_Stocks_Momentum_decile)
+}
+```
+
+```{r}
+PS3_Q3 <- function(CRSP_Stocks_Momentum_decile, FF_mkt){
+  # calculate value-weighted return in each decile portfolio
+  DM_Momentum_returns <- CRSP_Stocks_Momentum_decile[, .(DM_Ret = sum(Ret*lag_Mkt_Cap / sum(lag_Mkt_Cap)), decile = DM_decile), by = .(DM_decile, Year, Month)]
+  KRF_Momentum_returns <- CRSP_Stocks_Momentum_decile[, .(KRF_Ret = sum(Ret*lag_Mkt_Cap / sum(lag_Mkt_Cap)), decile = KRF_decile), by = .(KRF_decile, Year, Month)]
+  # retrieve decile portfolio return columns
+  DM_Momentum <- DM_Momentum_returns[, .(Year, Month, decile, DM_Ret)]
+  KRF_Momentum <- KRF_Momentum_returns[, .(Year, Month, decile, KRF_Ret)]
+  # merge with risk free rate
+  setkey(DM_Momentum, Year, Month, decile)
+  setkey(KRF_Momentum, Year, Month, decile)
+  aa <- DM_Momentum[KRF_Momentum,]
+  rf <- FF_mkt[, .(Year, Month, Rf)]
+  setkey(rf, Year, Month)
+  setkey(aa, Year, Month)
+```
+
+
+```{r}
+# fast join
+  CRSP_Stocks_Momentum_returns <- rf[aa, ]
+  # reorder the columns
+  setcolorder(CRSP_Stocks_Momentum_returns, c("Year", "Month", "decile", "DM_Ret", "KRF_Ret", "Rf"))
+  return(CRSP_Stocks_Momentum_returns)
+}
+```
+
+
+
+
