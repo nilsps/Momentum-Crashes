@@ -13,11 +13,6 @@ library(plyr)
 
 
 ```{r}
-Quandl.api_key("QnDmM5cUPLz3z6XAw5Uy") #Personal key -Nils
-Quandl('BSE/BOM504991')
-```
-
-```{r}
 cl <- makeCluster(detectCores()-1, type = "SOCK")
 
 call_cluster_init = function(cl){
@@ -37,13 +32,14 @@ amex = tq_exchange("AMEX")
 all_ticks = rbind(nyse,nasdaq,amex) 
 all_ticks = all_ticks$symbol
 ```
+
 ```{r, defining function for getting stocks}
 # Defining the function, this function will retrieve all the stock tickers found above 
 
-funk_df = function(i,list_of_tickers){tq_get(list_of_tickers[i], 
-                     from = '2021-05-30',
+funk_df = function(i){tq_get(all_ticks[i], 
+                     from = '2021-02-31',
                      to = '2021-05-31',
-                     get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data') 
+                     get = "stock.prices")
                      }
 ```
 
@@ -56,13 +52,14 @@ call_cluster_init() # Calling the cluster to do parallel processing
 
 total_loop_time = proc.time() #Starts timer 
 
-tot_df = foreach (i = 1:length(all_ticks[1:50]), .packages = "tidyverse") %dopar% {
-  funk = funk_df(i,all_ticks)
-  Sys.sleep(0.001)
+list_packs= c("tidyverse","tidyquant")
+
+tot_df = foreach (i = 1:length(all_ticks), .packages = list_packs) %dopar% {
+  funk = funk_df(i)
   return(as.data.frame(funk))
 }
 
-tot_df = ldply(tot_df) #converting from large list to data frame
+#tot_df = ldply(tot_df) #converting from large list to data frame
 
 proc.time() - total_loop_time #stops timer                    
 
@@ -73,26 +70,7 @@ save(tot_df, file="tot_df.Rdata")
 ```
    
 
-```{r, warning=FALSE}
-nyse <- tq_exchange("NYSE")
-nasdaq <- tq_exchange("NASDAQ")
-amex <- tq_exchange("AMEX")
 
-tot_df = tq_get(unique(total_tics),
-                     from = '2020-01-01',
-                     to = '2021-05-31',
-                     get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
-                     
-save(tot_df, file="tot_df.Rdata")
-```
-
-```{r}
-price_data2 <- tq_get(tickers,
-                     from = '2020-01-01',
-                     to = '2021-12-31',
-                     get = "financials") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
-View(price_data2)
-```
 
 ```{r}
 #tickers = c('BND', 'VB', 'VEA', 'VOO', 'VWO', 'aapl', 'msft')
