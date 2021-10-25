@@ -1,3 +1,8 @@
+---
+title: "Data retrival and random selection of 100 sample stocks"
+output: html_notebook
+---
+
 ```{r}
 library(tidyquant)
 library(tidyverse)
@@ -50,21 +55,32 @@ proc.time() - total_loop_time #stops timer
 numb_stocks = 100
 
 temp_stock = unique(tot_df$symbol)
-random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) # Retrieve a 100 random stocks from the universe
+random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) 
 #random_stocks_test = sample(1:30, 5, replace= FALSE)
+```
 
 
+```{r}
 filter_data = NULL
 
 randomizer = function(x){
-  filter_data = tot_df %>% filter(symbol == tot_df[random_stocks_test[x]])
+  filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
   return(filter_data)
 }
 
 random_stocks = lapply(1:numb_stocks, randomizer)
 
 df = ldply(random_stocks)
+df = subset(df, select = -c(value)) #removing a redundant column
+
+save(df, file="df.Rdata")
 ```
+
+
+
+
+
+
 
 
 # ```{r, find autotuned all primary filtred features for rpart}

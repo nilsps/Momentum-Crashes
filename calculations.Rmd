@@ -1,0 +1,123 @@
+---
+title: "Calculation of portfolios"
+output: html_notebook
+---
+
+```{r}
+library(tidyquant)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+```
+
+```{r}
+  library(doParallel)
+  library(snow)
+  library(doSNOW)
+cl <- makeCluster(detectCores()-1, type = "SOCK")
+ 
+call_cluster_init = function(cl){
+ registerDoParallel(cl)
+}
+```
+
+```{r}
+lapply(df, class) # Checking if every Col is in order
+
+df$ranking_start = df$date %m-% months(12)
+
+day(df$ranking_start) = days_in_month(df$ranking_start) #Se day of data to last day of month
+
+df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
+
+day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
+
+```
+
+```{r, warning=FALSE}
+dfa = df # Just making a backup 
+
+ #NB! always use adjusted! But for somereason they use close in the paper. Chose adjusted Due to close does not take into considiration stocksplits dividents etc. Or is this wrong?
+           
+df_temp1 = dfa %>% 
+          group_by(symbol) %>%
+          tq_transmute(select = adjusted,           
+                      mutate_fun = periodReturn,
+                      period = "daily",
+                      col_rename = "d_ret")
+df_temp2 = dfa %>% 
+          group_by(symbol) %>%
+          tq_transmute(select = adjusted,
+                      mutate_fun = periodReturn,
+                      period = "weekly",
+                      col_rename = "w_ret")
+df_temp3 = dfa %>% 
+          group_by(symbol) %>%
+          tq_transmute(select = adjusted, 
+                      mutate_fun = periodReturn,
+                      period = "monthly",
+                      col_rename = "m_ret")
+
+
+df_temp4 = dfa %>%
+  mutate(cr = cumprod(1 + df_temp1$d_ret))
+
+cbind(df, df_temp1$d_ret, weekly_ret = df_temp2$w_ret, m_ret = df_temp3$m_ret, cr = df_temp4$cr)
+
+dfa = dfa %>% mutate(d_return = (close - lead(close)) / lead(close))
+
+```
+
+
+```{r}
+# 
+# Redundant?? 
+#
+dfa$shifted_date = dfa$date %m+% months(1)
+
+day(dfa$shifted_date)=days_in_month(dfa$shifted_date)
+
+# stockdata<-merge(stockdata, # merge tables using the shifted date
+#                  stockdata2[,.(permno, shifted_date, tcap)],
+#                  by.x=c("permno", "date"), 
+#                  by.y=c("permno", "shifted_date"),
+#                  all.x=TRUE)
+
+dfa[is.na(dfa)] = 0 #SET NAs to 0 (missing data)
+
+```
+
+
+```{r}
+return_cols = c()
+packs_needed = c("tidyquant")
+
+call_cluster_init()
+
+
+foreach(i = 2:12, .packages = packs_needed) %dopar%  {
+    dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
+    day(dfa$shifted_date) = days_in_month(dfa$shifted_date)
+    
+    df = merge(df, # merge return using the shifted date
+                     dfa[,.(symbol, shifted_date, d_return)],
+                     by.x=c("symbol", "date"),
+                     by.y=c("symbol", "shifted_date"),
+                     all.x=TRUE
+                     )
+    
+    names(df)[names(df) == "return.x"] <- "return" # correct the column names
+    names(df)[names(df) == "return.y"] <-paste0("return_m", i)
+    return_cols = c(return_cols, paste0("return_m", i))
+} 
+
+stopCluster(cl)
+
+df
+return_cols
+stockdata$available_returns<-rowSums(!is.na(stockdata[,return_cols, with=FALSE])) # compute no of available returns
+stockdata
+```
+
+
+
