@@ -2,23 +2,23 @@
 library(tidyquant)
 library(tidyverse)
 library(dplyr)
-library(rvest)
-library(Quandl)
-library(foreach)
-library(doParallel)
-library(snow)
-library(doSNOW)
-library(plyr)
+#library(plyr)
 ```
+
+# ```{r}
+# library(devtools)
+# devtools::install_github("business-science/tidyquant")
+# ```
 
 
 ```{r}
-cl <- makeCluster(detectCores()-1, type = "SOCK")
-
-call_cluster_init = function(cl){
   library(doParallel)
   library(snow)
   library(doSNOW)
+
+cl <- makeCluster(detectCores()-1, type = "SOCK")
+
+call_cluster_init = function(cl){
   registerDoParallel(cl)
 }
 ```
@@ -35,13 +35,23 @@ all_ticks = all_ticks$symbol
 
 ```{r, defining function for getting stocks}
 # Defining the function, this function will retrieve all the stock tickers found above 
+#all_ticks = all_ticks[1:20] 
 
-funk_df = function(i){tq_get(all_ticks[i], 
-                     from = '2021-02-31',
-                     to = '2021-05-31',
+funk_df = function(i){tidyquant::tq_get(all_ticks[i], 
+                     from = '2020-02-31',
+                     to = '2021-10-25',
                      get = "stock.prices")
                      }
 ```
+
+```{r}
+tot_df = tq_get(all_ticks,
+                     from = '1960-01-01',
+                     to = '2021-10-24',
+                     get = "stock.prices")
+save(tot_df, file="tot_df.Rdata")
+```
+
 
 ```{r, find autotuned all primary filtred features for rpart}
 total_loop_time = proc.time() #Starts timer 
@@ -52,11 +62,11 @@ call_cluster_init() # Calling the cluster to do parallel processing
 
 total_loop_time = proc.time() #Starts timer 
 
-list_packs= c("tidyverse","tidyquant")
+# list_packs= c("tidyquant")
 
-tot_df = foreach (i = 1:length(all_ticks), .packages = list_packs) %dopar% {
+tot_df = foreach (i = 1:length(all_ticks), .packages = "tidyquant") %dopar% {
   funk = funk_df(i)
-  return(as.data.frame(funk))
+  return(funk)
 }
 
 #tot_df = ldply(tot_df) #converting from large list to data frame
@@ -87,7 +97,7 @@ wts = c(0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,
 price_data <- tq_get(tickers,
                      from = '1969-01-01',
                      to = '2020-12-31',
-                     get = "economic.data") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
+                     get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
 
 ret_data <- price_data %>%
   group_by(symbol) %>%
