@@ -1,9 +1,10 @@
 ---
 title: "Calculation of portfolios"
-output: html_notebook
+output: nils
 ---
 
 ```{r}
+library(tidyquant)
 library(tidyquant)
 library(tidyverse)
 library(dplyr)

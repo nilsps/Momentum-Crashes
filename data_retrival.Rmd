@@ -1,6 +1,6 @@
 ---
 title: "Data retrival and random selection of 100 sample stocks"
-output: html_notebook
+output: nils
 ---
 
 ```{r}
@@ -8,7 +8,7 @@ library(tidyquant)
 library(tidyverse)
 library(dplyr)
 library(plyr)
-#library(plyr)
+library(plyr)
 ```
 
 # ```{r}
