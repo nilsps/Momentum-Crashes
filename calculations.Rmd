@@ -25,7 +25,9 @@ library(matrixStats)
 # ```
 
 ```{r}
-load("~/Machinelearning1/Momentum-Crashes/df.Rdata")
+#load("~/Machinelearning1/Momentum-Crashes/df.Rdata")
+
+df = subset(df, select = -c(open, high, low, volume)) #Removing redundant information
 
 ###
 ## CREATING A MONTHLY DATASET ! 
@@ -90,7 +92,6 @@ dfa = cbind(dfa, d_ret = rets[1], cr = df_temp$cr)
 
 head(dfa) # Checking the DFA to make sure we got everything we need
 
-df = subset(df, select = -c(open, high, low, volume) )
 
 ```
 
@@ -123,7 +124,9 @@ df = subset(df, select = -c(open, high, low, volume) )
 x = c("symbol", "shifted_date", "m_ret")
 return_cols = c()
 
-for(i in c(2:12)){ # eleven months
+packs_needed = c("dplyr", "tidyverse")
+
+foreach(i = 2:12, .packages = packs_needed){ # eleven months
     dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
     day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
     
