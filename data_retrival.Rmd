@@ -11,12 +11,6 @@ library(plyr)
 library(plyr)
 ```
 
-# ```{r}
-# library(devtools)
-# devtools::install_github("business-science/tidyquant")
-# ```
-
-
 ```{r}
 ##
 # This sections registers the do parallel for your computer.
@@ -25,13 +19,9 @@ library(plyr)
    library(doParallel)
    library(snow)
    library(doSNOW)
- 
-<<<<<<< HEAD
+
 cl <- makeCluster(detectCores()-2, type = "SOCK") #Finds max hypertread on your pc minus two (for stability) 
-=======
-cl <- makeCluster(detectCores()-2, type = "SOCK")
->>>>>>> 25af62a471876fd5577f36454ead99964600f12c
- 
+
 call_cluster_init = function(cl){ # Creates a funtion to call under parallalization  
    registerDoParallel(cl)
  }
@@ -45,6 +35,11 @@ amex = tq_exchange("AMEX") # Amex
 
 all_ticks = rbind(nyse,nasdaq,amex) # Binds all stockmarkets together  
 all_ticks = all_ticks$symbol # MAkes a variable where all tickers are found 
+
+# Saving ram, as these are not needed anymore. 
+nyse = NULL
+nasdaq = NULL
+amex = NULL
 ```
 
 ```{r}
@@ -65,56 +60,12 @@ proc.time() - total_loop_time #stops timer Just to see how long it uses
 
 
 ```{r}
-<<<<<<< HEAD
-#
-# To avoid selection bias! we select numb_stock = n, at random. 
-#
-=======
-total_loop_time = proc.time()
-filter_data = NULL
-
-randomizer = function(x){
-  filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
-  return(filter_data)
-}
-
-random_stocks = lapply(1:numb_stocks, randomizer)
-
-df = ldply(random_stocks)
-df = subset(df, select = -c(value)) #removing a redundant column
-
-save(df, file="df.Rdata")
-proc.time() - total_loop_time
-```
-
-```{r}
-total_loop_time = proc.time()
-filter_data = NULL
-
-call_cluster_init()
->>>>>>> 25af62a471876fd5577f36454ead99964600f12c
-
+filter_data = NULL # Creates empty variable 
 numb_stocks = 5000  # Set to lower number to get less random drawn stocks.
 
-<<<<<<< HEAD
 temp_stock = unique(tot_df$symbol) # Find all the uniqe ticker from previously downloded data
 random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) # Creates a random sample of numb_stocks from the entire stock universe. 
-
-=======
-para_loop = foreach (i = 1:numb_stocks, .packages=packs_needed) %dopar% {
-                      filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[i]])
-                      return(filter_data)
-}
-
-df = ldply(para_loop)
-df = subset(df, select = -c(value)) #removing a redundant column
-
-save(df, file="df.Rdata")
-stopCluster(cl)
-proc.time() - total_loop_time
->>>>>>> 25af62a471876fd5577f36454ead99964600f12c
 ```
-
 
 # ```{r}
 # total_loop_time = proc.time()
@@ -144,7 +95,6 @@ proc.time() - total_loop_time
 ########
 #####################################
 total_loop_time = proc.time() # Timer 
-filter_data = NULL # Empty variable
 
 call_cluster_init() # Calling the parallel clustering
 
@@ -164,9 +114,11 @@ proc.time() - total_loop_time # stops the timer
 
 # Freeing up ram as these are not needed anymore
 para_loop = NULL
-nyse = NULL
-nasdaq = NULL
-amex = NULL
+tot_df = NULL
+
+###
+## All data seems to be inorder to this point
+###
 ```
 
 ####

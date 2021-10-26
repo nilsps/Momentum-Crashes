@@ -30,8 +30,6 @@ library(matrixStats)
 
 df = subset(df, select = -c(open, high, low, volume)) #Removing redundant information
 
-df = subset(df, select = -c(open, high, low, volume)) #Removing redundant information
-
 ###
 ## CREATING A MONTHLY DATASET ! 
 ##
@@ -79,11 +77,6 @@ df_temp = dfa %>% # Adding cumalative returns
 dfa = cbind(dfa, d_ret = rets[1], cr = df_temp$cr) # Binding CR and monthly return to main dataset 
 
 head(dfa) # Checking the DFA to make sure we got everything we need
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 25af62a471876fd5577f36454ead99964600f12c
 ```
 
 ```{r}
@@ -110,13 +103,9 @@ head(dfa) # Checking the DFA to make sure we got everything we need
 x = c("symbol", "shifted_date", "m_ret") # creates variables to copy later  
 return_cols = c() # Makes an empty vector where we get the returns 
 
-<<<<<<< HEAD
-for(i in c(2:12)){ # eleven months return 
-=======
-packs_needed = c("dplyr", "tidyverse")
+#packs_needed = c("dplyr", "tidyverse") #redundant info, was built for foreach loop
 
-foreach(i = 2:12, .packages = packs_needed){ # eleven months
->>>>>>> 25af62a471876fd5577f36454ead99964600f12c
+for(i in c(2:12)){ # eleven months return 
     dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
     day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
     
@@ -173,7 +162,7 @@ top$cr_ret = top$close - lead(top$close) / lead(top$close) # Adds returns IDK if
 
 bot = dfa %>% filter(quantile == 1) # "worst performing stocks 
 
-quant_portf = merge (bot, top, by.x = "date", by.y = "date") # just added them together (this is not used for anything yet)
+#quant_portf = merge (bot, top, by.x = "date", by.y = "date") # just added them together (this is not used for anything yet)
 
 #plotting the data, Get strange numbers. 
 ggplot(top, aes(x = date)) +
