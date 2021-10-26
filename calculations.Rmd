@@ -44,7 +44,8 @@ df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
 
 day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
 
-
+dfa<-df # copy stockdata
+day(dfa$shifted_date)<-days_in_month(dfa$shifted_date)
 ```
 
 <!-- ```{r, warning=FALSE} -->
@@ -111,7 +112,7 @@ df = subset(df, select = -c(open, high, low, volume) )
 # 
 # rets = as.data.frame(lapply(gaps,returns))
 
-dfa$shifted_date<-dfa$date %m+% months(1) # Making a column with +1 month shift as of the time lag needed for formations date
+#dfa$shifted_date<-dfa$date %m+% months(1) # Making a column with +1 month shift as of the time lag needed for formations date
 ```
 
 
@@ -121,7 +122,7 @@ dfa$shifted_date<-dfa$date %m+% months(1) # Making a column with +1 month shift 
 x = c("symbol", "shifted_date", "m_ret")
 return_cols = c()
 
-for(i in c(2:12)){ # We calculate from 2 months to twelve = 8 months 
+for(i in c(2:12)){ # eleven months
     dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
     day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
     
@@ -133,8 +134,8 @@ for(i in c(2:12)){ # We calculate from 2 months to twelve = 8 months
                      )
     
     names(df)[names(df) == "m_ret.x"] <- "m_ret" # correct the column names
-    names(df)[names(df) == "m_ret.y"] <-paste0("m_ret_m-", i)
-    return_cols<-c(return_cols, paste0("m_ret_m-", i))
+    names(df)[names(df) == "m_ret.y"] <-paste0("m_ret", i)
+    return_cols<-c(return_cols, paste0("m_ret", i))
 }
 
 df
