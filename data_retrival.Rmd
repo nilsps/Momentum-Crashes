@@ -17,17 +17,17 @@ library(plyr)
 # ```
 
 
-# ```{r}
-#   library(doParallel)
-#   library(snow)
-#   library(doSNOW)
-# 
-# cl <- makeCluster(detectCores()-1, type = "SOCK")
-# 
-# call_cluster_init = function(cl){
-#   registerDoParallel(cl)
-# }
-# ```
+```{r}
+   library(doParallel)
+   library(snow)
+   library(doSNOW)
+ 
+cl <- makeCluster(detectCores()-1, type = "SOCK")
+ 
+call_cluster_init = function(cl){
+   registerDoParallel(cl)
+ }
+```
 
 ```{r}
 
@@ -45,14 +45,14 @@ tot_df = tq_get(all_ticks,
                      from = '1960-01-01',
                      to = '2021-10-24',
                      get = "stock.prices")
-save(tot_df, file="tot_df.Rdata")
-write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE)
+#save(tot_df, file="tot_df.Rdata")
+#write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE)
 proc.time() - total_loop_time #stops timer     
 ```
 
 
 ```{r}
-numb_stocks = 100
+numb_stocks = 1000
 
 temp_stock = unique(tot_df$symbol)
 random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) 
@@ -61,6 +61,7 @@ random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE)
 
 
 ```{r}
+total_loop_time = proc.time()
 filter_data = NULL
 
 randomizer = function(x){
@@ -74,6 +75,27 @@ df = ldply(random_stocks)
 df = subset(df, select = -c(value)) #removing a redundant column
 
 save(df, file="df.Rdata")
+proc.time() - total_loop_time
+```
+
+```{r}
+total_loop_time = proc.time()
+filter_data = NULL
+call_cluster_init()
+
+packs_needed = c("tidyverse", "dplyr")
+
+para_loop = foreach (i = 1:number_stocks, .packages(packs_needed) %dopar% {
+                      filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
+                      return(filter_data)
+})
+
+df = ldply(random_stocks)
+df = subset(df, select = -c(value)) #removing a redundant column
+
+save(df, file="df.Rdata")
+stopCluster(cl)
+proc.time() - total_loop_time
 ```
 
 
