@@ -10,6 +10,7 @@ library(dplyr)
 library(plyr)
 library(slider)
 library(bsts)
+library(matrixStats)
 ```
 
 # ```{r}
@@ -44,8 +45,11 @@ df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
 
 day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
 
-dfa<-df # copy stockdata
+dfa= data.table::data.table(df) #making a "working" table
+dfa$shifted_date<-dfa$date %m+% months(1)
 day(dfa$shifted_date)<-days_in_month(dfa$shifted_date)
+
+dfa[is.na(dfa)] = 0 #set nas' to zero
 ```
 
 <!-- ```{r, warning=FALSE} -->
@@ -63,9 +67,6 @@ day(dfa$shifted_date)<-days_in_month(dfa$shifted_date)
 
 
 ```{r}
-df = data.table::data.table(df)
-
-dfa = df # Just making a file to work with
 dfa[is.na(dfa)] = 0 #set nas' to zero
 
 gaps= c(1) #c(1,7,30) # daily, weekly, monthly, return #### SET TO ONE AS THIS IS MONTHLY DATASET
@@ -140,43 +141,59 @@ for(i in c(2:12)){ # eleven months
 
 df
 return_cols
-df$available_returns=rowSums(!is.na(df[,return_cols, with=FALSE])) # compute no of available returns
+df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute no of available returns
 df
 
+dfa=NULL
+df$cum_return=rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
 
+df
 
-dfa<-NULL
-df$cum_return<-rowProds(1+as.matrix(df[,return_cols, with=FALSE]), na.rm=T) # compute cumulative product
-df
-df<-df[, !return_cols, with=FALSE] # drop return_cols (not needed anymore)
-return_cols<-NULL
-df
+df = df[, -c(8:17)] # WARNING HARD CODED!  
+
+#df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
+return_cols=NULL
+df_temp = NULL
+rets = NULL
+month_day = NULL
+glimpse(df)
 ```
 
 
 ```{r}
-return_cols = c() # Empty vector
-packs_needed = c("tidyquant") # Packages needed for th for each loop
+library(data.table)
+dfa = df
 
-call_cluster_init() # Initiate the cluster for parallel computing
+# remove rows which have available_returns < 8
+dfa = dfa %>% filter(available_returns >= 8)
+glimpse(dfa)
 
+# normalize using the number of available returns
+dfa$cum_return = dfa$cum_return / dfa$available_returns
+# cut returns for each date into deciles to determine winner/loser portfolios
+ 
+dfa$quantile = cut(dfa$cum_return,
+    quantile(dfa$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+    include.lowest=TRUE, 
+    labels=FALSE)
 
-foreach(i = 2:12, .packages = packs_needed) %dopar%  {
-    dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
-    day(dfa$shifted_date) = days_in_month(dfa$shifted_date)
-    
-    df = merge(df, # merge return using the shifted date
-                     dfa[,.(symbol, shifted_date, d_return)],
-                     by.x=c("symbol", "date"),
-                     by.y=c("symbol", "shifted_date"),
-                     all.x=TRUE
-                     )
-    
-    names(df)[names(df) == "return.x"] <- "return" # correct the column names
-    names(df)[names(df) == "return.y"] <-paste0("return_m", i)
-    return_cols = c(return_cols, paste0("return_m", i))
-} 
+top = dfa %>% filter(quantile == 10)
+top = top %>% arrange(date) 
+top$cr_ret = top$close - lead(top$close) / lead(top$close)
 
+bot = dfa %>% filter(quantile == 1)
+
+quant_portf = merge (bot, top, by.x = "date", by.y = "date")
+
+ggplot(top, aes(x = date)) +
+       theme(legend.position = "top") +
+       geom_smooth(aes(y = cr_ret), color = "darkred") + 
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,1300000,100000)) +
+    scale_x_date()#date_breaks = '10 year',
+               #date_labels = '%Y')
 
 ```
 
