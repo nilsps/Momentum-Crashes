@@ -9,21 +9,32 @@ library(tidyverse)
 library(dplyr)
 library(plyr)
 library(slider)
+library(bsts)
 ```
 
-```{r}
-  library(doParallel)
-  library(snow)
-  library(doSNOW)
-cl <- makeCluster(detectCores()-1, type = "SOCK")
- 
-call_cluster_init = function(cl){
- registerDoParallel(cl)
-}
-```
+# ```{r}
+#   library(doParallel)
+#   library(snow)
+#   library(doSNOW)
+# cl <- makeCluster(detectCores()-1, type = "SOCK")
+#  
+# call_cluster_init = function(cl){
+#  registerDoParallel(cl)
+# }
+# ```
 
 ```{r}
+load("~/Machinelearning1/Momentum-Crashes/df.Rdata")
+
+###
+## CREATING A MONTHLY DATASET ! 
+##
+
 lapply(df, class) # Checking if every Col is in order
+
+month_day = LastDayInMonth(df$date)
+
+df = df %>% filter(date == month_day) 
 
 df$ranking_start = df$date %m-% months(12)
 
@@ -32,6 +43,7 @@ day(df$ranking_start) = days_in_month(df$ranking_start) #Se day of data to last 
 df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
 
 day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
+
 
 ```
 
@@ -55,7 +67,7 @@ df = data.table::data.table(df)
 dfa = df # Just making a file to work with
 dfa[is.na(dfa)] = 0 #set nas' to zero
 
-gaps= c(1,7,30) # daily, weekly, monthly, return
+gaps= c(1) #c(1,7,30) # daily, weekly, monthly, return #### SET TO ONE AS THIS IS MONTHLY DATASET
 
 dfa = dfa %>% group_by(symbol) %>% arrange(date) #Ordering and sorting the data 
 
@@ -63,16 +75,20 @@ returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n 
 
 rets = as.data.frame(lapply(gaps,returns)) # Run function on the gaps to get returns
 
-colnames(rets)[1] <- "d_ret" # Renaming cols 
-colnames(rets)[2] <- "w_ret"
-colnames(rets)[3] <- "m_ret"
+#colnames(rets)[1] <- "d_ret" # Renaming cols 
+#colnames(rets)[2] <- "w_ret"
+colnames(rets)[1] <- "m_ret"
 
 df_temp = dfa %>% # Adding cumalative returns
-  mutate(cr = cumprod(1 + rets$d_ret)) 
+  mutate(cr = cumprod(1 + rets$m_ret)) 
 
-dfa = cbind(dfa, d_ret = rets[1], w_ret = rets[2], m_ret = rets[3], cr = df_temp$cr) # binding all calculated data to dfa
+#dfa = cbind(dfa, d_ret = rets[1], w_ret = rets[2], m_ret = rets[3], cr = df_temp$cr) # binding all calculated data to dfa
+
+dfa = cbind(dfa, d_ret = rets[1], cr = df_temp$cr) 
 
 head(dfa) # Checking the DFA to make sure we got everything we need
+
+df = subset(df, select = -c(open, high, low, volume) )
 
 ```
 
@@ -109,8 +125,8 @@ for(i in c(2:12)){ # We calculate from 2 months to twelve = 8 months
     dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
     day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
     
-    dfa<-merge(df, # merge return using the shifted date
-                     (dfa[,..(symbol, shifted_date, m_ret )]),
+    df = merge(df, # merge return using the shifted date
+                     dfa[x],
                      by.x=c("symbol", "date"),
                      by.y=c("symbol", "shifted_date"),
                      all.x=TRUE
@@ -120,6 +136,20 @@ for(i in c(2:12)){ # We calculate from 2 months to twelve = 8 months
     names(df)[names(df) == "m_ret.y"] <-paste0("m_ret_m-", i)
     return_cols<-c(return_cols, paste0("m_ret_m-", i))
 }
+
+df
+return_cols
+df$available_returns=rowSums(!is.na(df[,return_cols, with=FALSE])) # compute no of available returns
+df
+
+
+
+dfa<-NULL
+df$cum_return<-rowProds(1+as.matrix(df[,return_cols, with=FALSE]), na.rm=T) # compute cumulative product
+df
+df<-df[, !return_cols, with=FALSE] # drop return_cols (not needed anymore)
+return_cols<-NULL
+df
 ```
 
 
@@ -146,12 +176,7 @@ foreach(i = 2:12, .packages = packs_needed) %dopar%  {
     return_cols = c(return_cols, paste0("return_m", i))
 } 
 
-stopCluster(cl)
 
-df
-return_cols
-stockdata$available_returns<-rowSums(!is.na(stockdata[,return_cols, with=FALSE])) # compute no of available returns
-stockdata
 ```
 
 
