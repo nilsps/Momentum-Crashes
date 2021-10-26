@@ -86,10 +86,10 @@ call_cluster_init()
 
 packs_needed = c("tidyverse", "dplyr")
 
-para_loop = foreach (i = 1:numb_stocks, .packages(packs_needed) %dopar% {
+para_loop = foreach (i = 1:numb_stocks, .packages(packs_needed))%dopar% {
                       filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[i]])
                       return(filter_data)
-})
+}
 
 df = ldply(para_loop)
 df = subset(df, select = -c(value)) #removing a redundant column
