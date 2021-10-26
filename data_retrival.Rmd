@@ -1,6 +1,6 @@
 ---
 title: "Data retrival and random selection of 100 sample stocks"
-output: html_notebook
+output: nils
 ---
 
 ```{r}
@@ -8,7 +8,7 @@ library(tidyquant)
 library(tidyverse)
 library(dplyr)
 library(plyr)
-#library(plyr)
+library(plyr)
 ```
 
 # ```{r}
@@ -18,160 +18,120 @@ library(plyr)
 
 
 ```{r}
+##
+# This sections registers the do parallel for your computer.
+##
+
    library(doParallel)
    library(snow)
    library(doSNOW)
  
-cl <- makeCluster(detectCores()-1, type = "SOCK")
+cl <- makeCluster(detectCores()-2, type = "SOCK") #Finds max hypertread on your pc minus two (for stability) 
  
-call_cluster_init = function(cl){
+call_cluster_init = function(cl){ # Creates a funtion to call under parallalization  
    registerDoParallel(cl)
  }
 ```
 
 ```{r}
 
-nyse = tq_exchange("NYSE")
-nasdaq = tq_exchange("NASDAQ")
-amex = tq_exchange("AMEX")
+nyse = tq_exchange("NYSE") # Retrives all tickers from NYSE
+nasdaq = tq_exchange("NASDAQ")# Same but Nasdaq  
+amex = tq_exchange("AMEX") # Amex   
 
-all_ticks = rbind(nyse,nasdaq,amex) 
-all_ticks = all_ticks$symbol
+all_ticks = rbind(nyse,nasdaq,amex) # Binds all stockmarkets together  
+all_ticks = all_ticks$symbol # MAkes a variable where all tickers are found 
 ```
 
 ```{r}
+##
+# THIS TAKES A LONG TIME, To save time adjust dates as it retrives all stocks available and omits stocks without historical data 
+##
+
+
 total_loop_time = proc.time() #Starts timer 
 tot_df = tq_get(all_ticks,
                      from = '1960-01-01',
                      to = '2021-10-24',
                      get = "stock.prices")
-#save(tot_df, file="tot_df.Rdata")
-#write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE)
-proc.time() - total_loop_time #stops timer     
+#save(tot_df, file="tot_df.Rdata") # Untick this box to save data to your disk  
+#write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE) #Write it as csv to your disk. This file is 3-5 times bigger then .Rdata but can be used in databases, excel etc. 
+proc.time() - total_loop_time #stops timer Just to see how long it uses 
 ```
 
 
 ```{r}
-numb_stocks = 1000
+#
+# To avoid selection bias! we select numb_stock = n, at random. 
+#
 
-temp_stock = unique(tot_df$symbol)
-random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) 
-#random_stocks_test = sample(1:30, 5, replace= FALSE)
+numb_stocks = 5000  # Set to lower number to get less random drawn stocks.
+
+temp_stock = unique(tot_df$symbol) # Find all the uniqe ticker from previously downloded data
+random_stocks = sample(1:length(temp_stock), numb_stocks, replace= FALSE) # Creates a random sample of numb_stocks from the entire stock universe. 
+
 ```
-
-
-```{r}
-total_loop_time = proc.time()
-filter_data = NULL
-
-randomizer = function(x){
-  filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
-  return(filter_data)
-}
-
-random_stocks = lapply(1:numb_stocks, randomizer)
-
-df = ldply(random_stocks)
-df = subset(df, select = -c(value)) #removing a redundant column
-
-save(df, file="df.Rdata")
-proc.time() - total_loop_time
-```
-
-```{r}
-total_loop_time = proc.time()
-filter_data = NULL
-call_cluster_init()
-
-packs_needed = c("tidyverse", "dplyr")
-
-para_loop = foreach (i = 1:number_stocks, .packages(packs_needed) %dopar% {
-                      filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[i]])
-                      return(filter_data)
-})
-
-df = ldply(random_stocks)
-df = subset(df, select = -c(value)) #removing a redundant column
-
-save(df, file="df.Rdata")
-stopCluster(cl)
-proc.time() - total_loop_time
-```
-
-
-
-
-
-
-
-
-# ```{r, find autotuned all primary filtred features for rpart}
-# total_loop_time = proc.time() #Starts timer 
-# 
-# tot_df = NULL # creates an empty variable
-# 
-# call_cluster_init() # Calling the cluster to do parallel processing 
-# 
-# total_loop_time = proc.time() #Starts timer 
-# 
-# # list_packs= c("tidyquant")
-# 
-# tot_df = foreach (i = 1:length(all_ticks), .packages = "tidyquant") %dopar% {
-#   funk = funk_df(i)
-#   return(funk)
-# }
-# 
-# #tot_df = ldply(tot_df) #converting from large list to data frame
-# 
-# proc.time() - total_loop_time #stops timer                    
-# 
-# 
-# stopCluster(cl)
-# 
-# save(tot_df, file="tot_df.Rdata")
-# ```
-   
-
 
 
 # ```{r}
+# total_loop_time = proc.time()
+# filter_data = NULL
+# 
+# randomizer = function(x){
+#   filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
+#   return(filter_data)
+# }
+# 
+# random_stocks = lapply(1:numb_stocks, randomizer)
+# 
+# df = ldply(random_stocks)
+# df = subset(df, select = -c(value)) #removing a redundant column
+# 
+# save(df, file="df.Rdata")
+# proc.time() - total_loop_time
+# ```
+
+```{r}
+
+#####################################
+########
+######## DO NOT RUN! UNLESS PC HAS OVER 45GB OF RAM @ 30 cores/parallels      
+########  USE CHUNK ABOVE IF ON REGULAR COMPUTER!
+########     CAN OVERLOAD PC AT MAX CORES
+########
+#####################################
+total_loop_time = proc.time() # Timer 
+filter_data = NULL # Empty variable
+
+call_cluster_init() # Calling the parallel clustering
+
+packs_needed = c("tidyverse", "dplyr") # Need to call packs inside parallelization, or else they do not exist within the loop- 
+
+para_loop = foreach (i = 1:numb_stocks, .packages=packs_needed) %dopar% { # makes a loop  
+                      filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[i]]) # filter out all stocks that are not "picked" by the random generator 
+                      return(filter_data) # returns data
+}
+
+df = ldply(para_loop) # This is here to convert from x amount data from para_loop into single dataset.
+df = subset(df, select = -c(value)) #removing a redundant column
+
+save(df, file="df.Rdata") #Saving the data to the pc 
+stopCluster(cl) # Closing down the computing cluster 
+proc.time() - total_loop_time # stops the timer 
+
+# Freeing up ram as these are not needed anymore
+para_loop = NULL
+nyse = NULL
+nasdaq = NULL
+amex = NULL
+```
+
+####
+## Testing set for program flow. 
+####
 # #tickers = c('BND', 'VB', 'VEA', 'VOO', 'VWO', 'aapl', 'msft')
 # 
 # #Old stocks pre year 1911
-# tickers = c('xom', 'ge', 'cvx', 'ibm', 'cl', 'pg', 'jnj', 'jpm','pfe', 'ko', 'wfc', 'c', 'bac', 'mrk', 'pep', 'abt', 'gs', 'ups', 'mmm', 'axp', 'f', 'cvs', 'usb', 'unp', 'bmy', 'dd', 'met', 'lly', 'dow', 'EMR')
-# 
-# # Asset weights
-# tick_leng = 1/length(tickers)
-# eq_wts = c(rep(tick_leng, length(tickers))) # Creates a 1/n weighting
-# 
-# wts = c(0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033,0.033) #All weights sett to 1/30, due to copy paste
-# 
-# price_data <- tq_get(tickers,
-#                      from = '1969-01-01',
-#                      to = '2020-12-31',
-#                      get = "stock.prices") #'stock.prices')#, 'dividends', 'splits', 'economic.data')
-# 
-# ret_data <- price_data %>%
-#   group_by(symbol) %>%
-#   tq_transmute(select = adjusted, #NB! always use adjusted! Due to close does not take into considiration stocksplits dividents etc. 
-#                mutate_fun = periodReturn,
-#                period = "daily",
-#                col_rename = "ret")
-# 
-# wts_tbl <- tibble(symbol = tickers,
-#                   wts = wts)
-# ret_data <- left_join(ret_data,wts_tbl, by = 'symbol')
-# 
-# ret_data <- ret_data %>%
-#   mutate(wt_return = wts * ret)
-# 
-# port_ret <- ret_data %>%
-#   group_by(date) %>%
-#   summarise(port_ret = sum(wt_return))
-# 
-# port_cumulative_ret <- port_ret %>%
-#   mutate(cr = cumprod(1 + port_ret))
-# 
-# save(ret_data, file="ret_data.Rdata")
-# ```
+# tickers = c('xom', 'ge', 'cvx', 'ibm', 'cl', 'pg', 'jnj', 'jpm','pfe', 'ko', 'wfc', 'c', 'bac', 'mrk', #'pep', 'abt', 'gs', 'ups', 'mmm', 'axp', 'f', 'cvs', 'usb', 'unp', 'bmy', 'dd', 'met', 'lly', 'dow', 'EMR')
+
 
