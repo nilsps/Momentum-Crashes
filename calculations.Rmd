@@ -35,100 +35,99 @@ day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last
 
 ```
 
+<!-- ```{r, warning=FALSE} -->
+
+
+<!-- #skal ikke behøve og ha loop  -->
+<!-- for (i in 1:length(dfa)) {  -->
+<!--   x = unique(dfa$ranking_start %m+% years(1)) -->
+<!--   for ( j in 1:length(dfa)) { -->
+<!--     if (dfa$date == x){ -->
+<!--       print("yay")} -->
+<!--   } -->
+<!-- } -->
+<!-- ``` -->
+
+
 ```{r}
-dfa = df # Just making a backup 
-dfa[is.na(dfa)] = 0
+df = data.table::data.table(df)
 
-gaps= c(1,7,30)
+dfa = df # Just making a file to work with
+dfa[is.na(dfa)] = 0 #set nas' to zero
 
-dfa = dfa %>% group_by(symbol) %>% arrange(date)
+gaps= c(1,7,30) # daily, weekly, monthly, return
 
-returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n = gaps)}
+dfa = dfa %>% group_by(symbol) %>% arrange(date) #Ordering and sorting the data 
 
-rets = as.data.frame(lapply(gaps,returns))
+returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n = gaps)} # Return function
 
-colnames(rets)[1] <- "d_ret"
+rets = as.data.frame(lapply(gaps,returns)) # Run function on the gaps to get returns
+
+colnames(rets)[1] <- "d_ret" # Renaming cols 
 colnames(rets)[2] <- "w_ret"
 colnames(rets)[3] <- "m_ret"
 
-df_temp = dfa %>%
-  mutate(cr = cumprod(1 + df_temp1$d_ret))
+df_temp = dfa %>% # Adding cumalative returns
+  mutate(cr = cumprod(1 + rets$d_ret)) 
 
-dfa = cbind(dfa, d_ret = rets[1], w_ret = rets[2], m_ret = rets[3], cr = df_temp$cr)
+dfa = cbind(dfa, d_ret = rets[1], w_ret = rets[2], m_ret = rets[3], cr = df_temp$cr) # binding all calculated data to dfa
 
-head(dfa)
-
-#rets = ldply(rets)
-
-
-#dfa = dfa %>% mutate(d_return = (close - lead(close)) / lead(close))
+head(dfa) # Checking the DFA to make sure we got everything we need
 
 ```
 
-
-```{r, warning=FALSE}
-dfa = df # Just making a backup 
-dfa[is.na(dfa)] = 0
-#NB! always use adjusted! But for somereason they use close in the paper. Chose adjusted Due to close does not take into considiration stocksplits dividents etc. Or is this wrong?
-
-
-
-
-
-
-df_temp1 = dfa %>% 
-          group_by(symbol) %>%
-          tq_transmute(select = adjusted,           
-                      mutate_fun = periodReturn,
-                      period = "daily",
-                      col_rename = "d_ret")
-df_temp2 = dfa %>% 
-          group_by(symbol) %>%
-          tq_transmute(select = adjusted,
-                      mutate_fun = periodReturn,
-                      period = "weekly",
-                      col_rename = "w_ret")
-df_temp3 = dfa %>% 
-          group_by(symbol) %>%
-          tq_transmute(select = adjusted, 
-                      mutate_fun = periodReturn,
-                      period = "monthly",
-                      col_rename = "m_ret")
-
-df_temp4 = dfa %>%
-  mutate(cr = cumprod(1 + df_temp1$d_ret))
-
-cbind(df, df_temp1$d_ret, weekly_ret = df_temp2$w_ret, m_ret = df_temp3$m_ret, cr = df_temp4$cr)
-
-dfa = dfa %>% mutate(d_return = (close - lead(close)) / lead(close))
-
-```
-
-
-```{r}
-# 
-# Redundant?? 
+# ```{r}
+# v= tapply(df$date, as.yearmon(df$date), max)
 #
-dfa$shifted_date = dfa$date %m+% months(1)
+# z = tapply(df$date, substr(df$date, 1, 7), max)
+# ```
 
-day(dfa$shifted_date)=days_in_month(dfa$shifted_date)
 
-# stockdata<-merge(stockdata, # merge tables using the shifted date
-#                  stockdata2[,.(permno, shifted_date, tcap)],
-#                  by.x=c("permno", "date"), 
-#                  by.y=c("permno", "shifted_date"),
-#                  all.x=TRUE)
 
-dfa[is.na(dfa)] = 0 #SET NAs to 0 (missing data)
+```{r}
+# goal is to check for monthly 8 monthly returns over 11 month 
 
+# gaps= c(1,7,30) # daily, weekly, monthly, return
+# 
+# dfa = dfa %>% group_by(symbol) %>% arrange(date) #Ordering and sorting the data 
+# 
+# returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n = gaps)} # Return function
+# 
+# rets = as.data.frame(lapply(gaps,returns))
+
+dfa$shifted_date<-dfa$date %m+% months(1) # Making a column with +1 month shift as of the time lag needed for formations date
 ```
 
 
 ```{r}
-return_cols = c()
-packs_needed = c("tidyquant")
+#names(dfa)[names(dfa) == "close"] = "close.x"
 
-call_cluster_init()
+x = c("symbol", "shifted_date", "m_ret")
+return_cols = c()
+
+for(i in c(2:12)){ # We calculate from 2 months to twelve = 8 months 
+    dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
+    day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
+    
+    dfa<-merge(df, # merge return using the shifted date
+                     (dfa[,..(symbol, shifted_date, m_ret )]),
+                     by.x=c("symbol", "date"),
+                     by.y=c("symbol", "shifted_date"),
+                     all.x=TRUE
+                     )
+    
+    names(df)[names(df) == "m_ret.x"] <- "m_ret" # correct the column names
+    names(df)[names(df) == "m_ret.y"] <-paste0("m_ret_m-", i)
+    return_cols<-c(return_cols, paste0("m_ret_m-", i))
+}
+```
+
+
+```{r}
+return_cols = c() # Empty vector
+packs_needed = c("tidyquant") # Packages needed for th for each loop
+
+call_cluster_init() # Initiate the cluster for parallel computing
 
 
 foreach(i = 2:12, .packages = packs_needed) %dopar%  {
