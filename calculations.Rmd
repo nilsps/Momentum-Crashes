@@ -167,11 +167,11 @@ bot = dfa %>% filter(quantile == 1) # "worst performing stocks
 #plotting the data, Get strange numbers. 
 ggplot(top, aes(x = date)) +
        theme(legend.position = "top") +
-       geom_line(aes(y = cr_ret), color = "darkred") + 
+       geom_smooth(aes(y = cum_return), color = "darkred") + 
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,40000,10000)) +
+    scale_y_continuous(breaks = seq(0,50000,5000)) +
     scale_x_date()#date_breaks = '10 year',
                #date_labels = '%Y')
 ##
