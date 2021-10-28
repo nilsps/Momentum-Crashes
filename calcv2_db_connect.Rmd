@@ -26,20 +26,35 @@ library(matrixStats)
 # ```
 
 ```{r}
-#load("~/Machinelearning1/Momentum-Crashes/df.Rdata")
+db <- dbConnect(RPostgres::Postgres(), dbname = "stock_db")
 
-df = subset(df, select = -c(open, high, low, volume)) #Removing redundant information
+overview <- tbl(db, "overview")
+daily = tbl(db, "daily")
 
-#df = daily %>% dplyr::select(stock_id, date, open, close) # connecting to db 
+df = daily %>% dplyr::select(stock_id, date, close) %>% as_tibble ()# connecting to db 
 
-###
+df$date = df$date %>% as.POSIXct()  
+
+# df = overview %>% dplyr::filter(ipo_year == 2021) %>% dplyr::filter(exchange == "NASDAQ")
+# df
+
+# dbWriteTable(db, "daily", value = df, overwrite = TRUE, append= F, row.names = FALSE)
+
+```
+
+
+```{r}
+##
 ## CREATING A MONTHLY DATASET ! 
 ##
-  
 
-lapply(df, class) # Checking if every Col is in order
 
-month_day = LastDayInMonth(df$date) #Gets the last day in the month 
+#df_date = df_date as.Date.POSIXct(df_date, tryFormat = "%Y-%m-%d")
+
+month_day = LastDayInMonth(df$date) %>% as.Date()
+
+#elect (Convert(date, '2018-04-01'))
+df$date = df$date %>% as.Date()  
 
 df = df %>% filter(date == month_day) #Filters out all other dates for the month except last one
 
@@ -56,13 +71,15 @@ dfa$shifted_date<-dfa$date %m+% months(1) # Shifting the date with one month
 day(dfa$shifted_date)<-days_in_month(dfa$shifted_date) # Sets last day of months to shifted month  
 
 dfa[is.na(dfa)] = 0 #set nas' to zero
+
+month_day = NULL
 ```
 
 
 ```{r}
 gaps= c(1) #c(1,7,30) # daily, weekly, monthly, return #### SET TO ONE AS THIS IS MONTHLY DATASET
 
-dfa = dfa %>% group_by(symbol) %>% arrange(date) #Ordering and sorting the data 
+dfa = dfa %>% group_by(stock_id) %>% arrange(date) #Ordering and sorting the data 
 
 returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n = gaps)} # Return function, gives return per month pr stock (roling returns)
 
@@ -103,7 +120,7 @@ head(dfa) # Checking the DFA to make sure we got everything we need
 ```{r}
 #names(dfa)[names(dfa) == "close"] = "close.x"
 
-x = c("symbol", "shifted_date", "m_ret") # creates variables to copy later  
+x = c("stock_id", "shifted_date", "m_ret") # creates variables to copy later  
 return_cols = c() # Makes an empty vector where we get the returns 
 
 #packs_needed = c("dplyr", "tidyverse") #redundant info, was built for foreach loop
@@ -114,8 +131,8 @@ for(i in c(2:12)){ # eleven months return
     
     df = merge(df, # merge return using the shifted date
                      dfa[x],
-                     by.x=c("symbol", "date"),
-                     by.y=c("symbol", "shifted_date"),
+                     by.x=c("stock_id", "date"),
+                     by.y=c("stock_id", "shifted_date"),
                      all.x=TRUE
                      )
     
@@ -172,6 +189,135 @@ ggplot(top, aes(x = date)) +
        theme(legend.position = "top") +
        geom_smooth(aes(y = cum_return), color = "darkred") + 
        labs(x = 'Date',
+
+```{r}
+urlfile <- "https://raw.githubusercontent.com/emanuelaf/emanuelaf.github.io/master/data/sales-of-shampoo.csv"
+shampoo_sales <- read_csv(urlfile)
+
+```
+
+```{r}
+class(shampoo_sales$Month)
+```
+
+```{r}
+shampoo_sales <- shampoo_sales %>%
+  rename(time = Month, sales = `Sales of shampoo over a three year period`) %>%
+  mutate(time = paste0("0", time)) %>%
+  mutate(time = as.Date(parse_date_time(time, "%y%m"))) %>% 
+  na.omit() 
+#library(systemfonts)
+install.packages("systemfonts")
+knitr::kable(head(shampoo_sales), "html") %>%
+  kableExtra::kable_styling(full_width = F, font_size = 11, position = "center")
+```
+
+```{r}
+ggplot(shampoo_sales, aes(x = time, y = sales)) +
+  geom_line(col = "hotpink") + ylim(0, 800) +
+  scale_x_date(date_labels = "%y %b", date_breaks = "2 month") +
+  theme_bw() + theme(legend.title = element_blank(),
+                     axis.text.x  = element_text(angle=45, vjust=0.5))
+```
+
+```{r}
+par(mfrow = c(1,2))
+acf(as.ts(shampoo_sales$sales), main = "Sales")
+pacf(as.ts(shampoo_sales$sales), main = "Sales")
+```
+
+```{r}
+arima1 <- auto.arima(as.ts(shampoo_sales$sales))
+arima1
+```
+
+
+##### 6 Month Prediction ####
+
+```{r}
+train_index <- 30
+n_total <- nrow(shampoo_sales)
+shampoo_sales_train1 <- shampoo_sales[1:(train_index),]
+shampoo_sales_test <- shampoo_sales[(train_index+1):n_total,]
+predicted <- numeric(n_total-train_index)
+```
+
+```{r}
+for (i in 1:(n_total-train_index)) {
+  shampoo_sales_train <- shampoo_sales[1:(train_index-1+i),]
+  arima_model <- auto.arima(as.ts(shampoo_sales_train$sales))
+  pred <- forecast(arima_model, 1)
+  predicted[i] <- pred$mean
+}
+```
+
+```{r}
+df_pred <- tibble(obs = c(shampoo_sales_train1$sales, shampoo_sales_test$sales), 
+                  predicted = c(shampoo_sales_train1$sales, predicted), 
+                  time = shampoo_sales$time)
+```
+
+```{r}
+ggplot(gather(df_pred, obs_pred, value, -time) %>% 
+         mutate(obs_pred = factor(obs_pred, levels = c("predicted", "obs"))), 
+       aes(x = time, y = value, col = obs_pred, linetype = obs_pred)) +
+  geom_line() +
+  xlab("") + ylab("") +
+  scale_color_manual(values=c("black", "hotpink")) +
+  scale_linetype_manual(values=c(2, 1)) +
+  scale_x_date(date_labels = "%y %b", date_breaks = "1 month") +
+  theme_bw() + theme(legend.title = element_blank(),
+                     axis.text.x  = element_text(angle=45, vjust=0.5))
+```
+###### 12 Month Prediction ####
+
+```{r}
+train_index2 <- 24
+n_total <- nrow(shampoo_sales)
+shampoo_sales_train1 <- shampoo_sales[1:(train_index2),]
+shampoo_sales_test <- shampoo_sales[(train_index2+1):n_total,]
+predicted <- numeric(n_total-train_index2)
+```
+
+
+```{r}
+for (i in 1:(n_total-train_index2)) {
+  shampoo_sales_train <- shampoo_sales[1:(train_index2-1+i),]
+  arima_model <- auto.arima(as.ts(shampoo_sales_train$sales))
+  pred <- forecast(arima_model, 1)
+  predicted[i] <- pred$mean
+}
+```
+
+```{r}
+df_pred <- tibble(obs = c(shampoo_sales_train1$sales, shampoo_sales_test$sales), 
+                  predicted = c(shampoo_sales_train1$sales, predicted), 
+                  time = shampoo_sales$time)
+```
+
+```{r}
+ggplot(gather(df_pred, obs_pred, value, -time) %>% 
+         mutate(obs_pred = factor(obs_pred, levels = c("predicted", "obs"))), 
+       aes(x = time, y = value, col = obs_pred, linetype = obs_pred)) +
+  geom_line() +
+  xlab("") + ylab("") +
+  scale_color_manual(values=c("black", "hotpink")) +
+  scale_linetype_manual(values=c(2, 1)) +
+  scale_x_date(date_labels = "%y %b", date_breaks = "1 month") +
+  theme_bw() + theme(legend.title = element_blank(),
+                     axis.text.x  = element_text(angle=45, vjust=0.5))
+```
+
+```{r}
+Forecast <- forecast(arima_model, h=12)
+plot(Forecast)
+Forecast
+```
+
+
+
+
+
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
     scale_y_continuous(breaks = seq(0,50000,5000)) +
@@ -183,6 +329,3 @@ ggplot(top, aes(x = date)) +
 ##
 ##
 ```
-
-
-

@@ -33,13 +33,33 @@ nyse = tq_exchange("NYSE") # Retrives all tickers from NYSE
 nasdaq = tq_exchange("NASDAQ")# Same but Nasdaq  
 amex = tq_exchange("AMEX") # Amex   
 
+amex$exchange = "AMEX" 
+nyse$exchange = "NYSE"
+nasdaq$exchange = "NASDAQ" 
+
+
+
+
+
 all_ticks = rbind(nyse,nasdaq,amex) # Binds all stockmarkets together  
-all_ticks = all_ticks$symbol # MAkes a variable where all tickers are found 
+#all_ticks = all_ticks$symbol # MAkes a variable where all tickers are found 
+names(all_ticks)[3] = "last_sales_price" 
+names(all_ticks)[4] = "market_cap"
+names(all_ticks)[6] = "ipo_year"
+
+all_ticks[is.na(all_ticks)] = 0
+
+#glimpse(all_ticks)
+
+
+#write.csv(all_ticks, file = "Overview.csv", row.names = FALSE)
+
+
 
 # Saving ram, as these are not needed anymore. 
-nyse = NULL
-nasdaq = NULL
-amex = NULL
+#nyse = NULL
+#nasdaq = NULL
+#amex = NULL
 ```
 
 ```{r}
@@ -119,6 +139,9 @@ tot_df = NULL
 ###
 ## All data seems to be inorder to this point
 ###
+
+tot_df = subset(tot_df, select = -c(value)) #removing a redundant column
+write.csv(tot_df, file = "tot_df_db.csv", row.names = FALSE)
 ```
 
 ####
