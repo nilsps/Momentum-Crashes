@@ -185,36 +185,54 @@ top = dfa %>% filter(quantile == 10) # making the best performance portf
 top = top %>% arrange(date) # sorting after date  
 #top$cr_ret = top$close - lead(top$close) / lead(top$close) # Adds returns IDK if this will work here !!!!
 
+#####funk her#####
 
-# EW_top = 1/nrow(top_portf)
-# EW_top_ivest = 1/nrow(top_portf)
+reb_month_top =  unique(top$date)
+#holder = c()
 
-#top_portf = top_portf %>% mutate(cr_port = 1)
-
-holder = c()
-for (i in 1:somethign){ 
-reb_month_top =  unique(top$date)   
-top_portf = top[1:3] %>% filter(date == as.Date(reb_month_top[1]))
+for (i in 1:reb_month_top){ 
+  top_portf = top[1:3] %>% filter(date == as.Date(reb_month_top[i]))
+  print(top_portf)
 }
 
 #ret_port = function(top_portf){
   for (i in 1:nrow(top_portf)){
     x = df %>% filter(date == top_portf$date[i]) # all stock on the investment day within the 10th quantile
     y = x %>% filter(stock_id == top_portf$stock_id[i])# The specific stock to invest in 
-    z = df %>% filter(stock_id == y[1,1]) # all returns for the specific stock chosen
+    z = df %>% filter(stock_id == y[1,1]) # all data for the specific stock from x
+    
+    
     m = x[1,2]  %m+% months(1) # returns the stock plus one month 
-    n = df %>% filter(stock_id == x[1,1]) %>% filter (date == m) # locates the return for this stock
+    n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
     ret = (y$close  - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!  
     av =top_portf$returns[i]  = ret
     holder[i] = ret
-    print (av)
+    print (ret)
     #top_portf = cbind(top_portf,as.matrix(holder))
     #return(top_portf)
   }
 
 #}
 
-ret_port(top_portf)
+test = function(portfolio){ 
+  reb_month_top =  unique(top$date)
+    for (j in 1:reb_month_top){ 
+      portfolio = top[1:3] %>% filter(date == as.Date(reb_month_top[j]))
+        for (i in 1:nrow(portfolio)){
+            x =df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to invest 
+            z = df %>% filter(stock_id == x[1,1]) %>%  filter(date > portfolio[i,2])
+            m = z[1,2]   # returns the stock plus one month 
+            n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
+            ret = (x$close   - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!  
+            portfolio$returns[i]  = ret
+            print (ret)
+            #top_portf = cbind(top_portf,as.matrix(holder))
+            #return(top_portf)
+  }
+  }
+}
+
+test(top_portf)
   
 EW_top 
   
