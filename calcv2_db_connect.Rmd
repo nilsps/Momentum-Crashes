@@ -35,6 +35,7 @@ df = daily %>% dplyr::select(stock_id, date, close) %>% as_tibble ()# connecting
 
 df$date = df$date %>% as.POSIXct()  
 
+df = na.omit(df)
 # df = overview %>% dplyr::filter(ipo_year == 2021) %>% dplyr::filter(exchange == "NASDAQ")
 # df
 
@@ -89,14 +90,18 @@ rets = as.data.frame(lapply(gaps,returns)) # Run function on the gaps(1) to get 
 #colnames(rets)[2] <- "w_ret"
 colnames(rets)[1] <- "m_ret" # Gives correct names 
 
-df_temp = dfa %>% # Adding cumalative returns 
-  mutate(cr = cumprod(1 + rets$m_ret)) 
+# df_temp = dfa %>% # Adding cumalative returns 
+#   mutate(cr = cumprod(1 + rets$m_ret)) 
 
 #dfa = cbind(dfa, d_ret = rets[1], w_ret = rets[2], m_ret = rets[3], cr = df_temp$cr) # binding all calculated data to dfa
 
-dfa = cbind(dfa, d_ret = rets[1], cr = df_temp$cr) # Binding CR and monthly return to main dataset 
+dfa = cbind(dfa, d_ret = rets[1])#, cr = df_temp$cr) # Binding CR and monthly return to main dataset 
 
 head(dfa) # Checking the DFA to make sure we got everything we need
+
+rets=NULL
+df_temp = NULL
+gaps = NULL
 ```
 
 ```{r}
@@ -141,20 +146,20 @@ for(i in c(2:12)){ # eleven months return
     return_cols<-c(return_cols, paste0("m_ret", i)) # adds the new cols in a list to remove from set later
 }
 
-df # Checking dataset
+
 return_cols # Checking return cols 
-df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute noumber of available returns
+df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
 df
 
 dfa=NULL # frees memory, dfa is no longer needed  
-df$cum_return=rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
-df = df[, -c(8:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
+df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
+#df = df[, -c(8:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
 
 #df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
-return_cols=NULL
-df_temp = NULL
-rets = NULL
-month_day = NULL
+#return_cols=NULL
+#df_temp = NULL
+#rets = NULL
+#month_day = NULL
 glimpse(df) #checking the data
 ```
 
@@ -163,7 +168,7 @@ glimpse(df) #checking the data
 library(data.table)
 dfa = df
 
-# remove rows which have available_returns < 8
+# remove rows which have available_returns < 8 (less then 8 monthly return within the search)
 dfa = dfa %>% filter(available_returns >= 8) # Provides the highest momentum stocks 
 glimpse(dfa) # Rechecking table 
 
@@ -178,7 +183,73 @@ dfa$quantile = cut(dfa$cum_return,
 
 top = dfa %>% filter(quantile == 10) # making the best performance portf 
 top = top %>% arrange(date) # sorting after date  
-top$cr_ret = top$close - lead(top$close) / lead(top$close) # Adds returns IDK if this will work here !!!!
+#top$cr_ret = top$close - lead(top$close) / lead(top$close) # Adds returns IDK if this will work here !!!!
+
+
+# EW_top = 1/nrow(top_portf)
+# EW_top_ivest = 1/nrow(top_portf)
+
+#top_portf = top_portf %>% mutate(cr_port = 1)
+
+holder = c()
+for (i in 1:somethign){ 
+reb_month_top =  unique(top$date)   
+top_portf = top[1:3] %>% filter(date == as.Date(reb_month_top[1]))
+}
+
+#ret_port = function(top_portf){
+  for (i in 1:nrow(top_portf)){
+    x = df %>% filter(date == top_portf$date[i]) # all stock on the investment day within the 10th quantile
+    y = x %>% filter(stock_id == top_portf$stock_id[i])# The specific stock to invest in 
+    z = df %>% filter(stock_id == y[1,1]) # all returns for the specific stock chosen
+    m = x[1,2]  %m+% months(1) # returns the stock plus one month 
+    n = df %>% filter(stock_id == x[1,1]) %>% filter (date == m) # locates the return for this stock
+    ret = (y$close  - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!  
+    av =top_portf$returns[i]  = ret
+    holder[i] = ret
+    print (av)
+    #top_portf = cbind(top_portf,as.matrix(holder))
+    #return(top_portf)
+  }
+
+#}
+
+ret_port(top_portf)
+  
+EW_top 
+  
+  top_portf %>% mutate(p_cr = cumprod(1+))
+  return(returns)
+}
+
+top = top[1:3] %>% mutate(portfolio_return = cumprod(1 + rets$m_ret))
+    
+df_temp = df %>% # Adding cumalative returns 
+ mutate(portfolio_return = cumprod(1 + rets$m_ret))
+
+names(df)[names(df) == "m_ret.y"] <-paste0("m_ret", i)# adding the roling returns for months
+    
+  }) 
+  return(y)
+}
+
+    
+  lead(df$close[1])
+  EW_top * = top_portf$close[1] -  
+  
+})
+
+så går det en måned, 
+Da tar vi og kalkulrer hva vi har tjent per stock. 
+Som blir da EW_top * med return for neste måned.
+så kjører vi cumprod av dette. 
+
+vi kalkulerer return. som da blir summen av returns 
+
+dfa$shifted_date = dfa$date %m+% months(1)
+
+returns = (top_portf$close - lead(df$close, n= 1)) / lead(df$close,n = 1)
+
 
 bot = dfa %>% filter(quantile == 1) # "worst performing stocks 
 
@@ -188,144 +259,17 @@ bot = dfa %>% filter(quantile == 1) # "worst performing stocks
 ggplot(top, aes(x = date)) +
        theme(legend.position = "top") +
        geom_smooth(aes(y = cum_return), color = "darkred") + 
-       labs(x = 'Date',
-
-```{r}
-urlfile <- "https://raw.githubusercontent.com/emanuelaf/emanuelaf.github.io/master/data/sales-of-shampoo.csv"
-shampoo_sales <- read_csv(urlfile)
-
-```
-
-```{r}
-class(shampoo_sales$Month)
-```
-
-```{r}
-shampoo_sales <- shampoo_sales %>%
-  rename(time = Month, sales = `Sales of shampoo over a three year period`) %>%
-  mutate(time = paste0("0", time)) %>%
-  mutate(time = as.Date(parse_date_time(time, "%y%m"))) %>% 
-  na.omit() 
-#library(systemfonts)
-install.packages("systemfonts")
-knitr::kable(head(shampoo_sales), "html") %>%
-  kableExtra::kable_styling(full_width = F, font_size = 11, position = "center")
-```
-
-```{r}
-ggplot(shampoo_sales, aes(x = time, y = sales)) +
-  geom_line(col = "hotpink") + ylim(0, 800) +
-  scale_x_date(date_labels = "%y %b", date_breaks = "2 month") +
-  theme_bw() + theme(legend.title = element_blank(),
-                     axis.text.x  = element_text(angle=45, vjust=0.5))
-```
-
-```{r}
-par(mfrow = c(1,2))
-acf(as.ts(shampoo_sales$sales), main = "Sales")
-pacf(as.ts(shampoo_sales$sales), main = "Sales")
-```
-
-```{r}
-arima1 <- auto.arima(as.ts(shampoo_sales$sales))
-arima1
-```
-
-
-##### 6 Month Prediction ####
-
-```{r}
-train_index <- 30
-n_total <- nrow(shampoo_sales)
-shampoo_sales_train1 <- shampoo_sales[1:(train_index),]
-shampoo_sales_test <- shampoo_sales[(train_index+1):n_total,]
-predicted <- numeric(n_total-train_index)
-```
-
-```{r}
-for (i in 1:(n_total-train_index)) {
-  shampoo_sales_train <- shampoo_sales[1:(train_index-1+i),]
-  arima_model <- auto.arima(as.ts(shampoo_sales_train$sales))
-  pred <- forecast(arima_model, 1)
-  predicted[i] <- pred$mean
-}
-```
-
-```{r}
-df_pred <- tibble(obs = c(shampoo_sales_train1$sales, shampoo_sales_test$sales), 
-                  predicted = c(shampoo_sales_train1$sales, predicted), 
-                  time = shampoo_sales$time)
-```
-
-```{r}
-ggplot(gather(df_pred, obs_pred, value, -time) %>% 
-         mutate(obs_pred = factor(obs_pred, levels = c("predicted", "obs"))), 
-       aes(x = time, y = value, col = obs_pred, linetype = obs_pred)) +
-  geom_line() +
-  xlab("") + ylab("") +
-  scale_color_manual(values=c("black", "hotpink")) +
-  scale_linetype_manual(values=c(2, 1)) +
-  scale_x_date(date_labels = "%y %b", date_breaks = "1 month") +
-  theme_bw() + theme(legend.title = element_blank(),
-                     axis.text.x  = element_text(angle=45, vjust=0.5))
-```
-###### 12 Month Prediction ####
-
-```{r}
-train_index2 <- 24
-n_total <- nrow(shampoo_sales)
-shampoo_sales_train1 <- shampoo_sales[1:(train_index2),]
-shampoo_sales_test <- shampoo_sales[(train_index2+1):n_total,]
-predicted <- numeric(n_total-train_index2)
-```
-
-
-```{r}
-for (i in 1:(n_total-train_index2)) {
-  shampoo_sales_train <- shampoo_sales[1:(train_index2-1+i),]
-  arima_model <- auto.arima(as.ts(shampoo_sales_train$sales))
-  pred <- forecast(arima_model, 1)
-  predicted[i] <- pred$mean
-}
-```
-
-```{r}
-df_pred <- tibble(obs = c(shampoo_sales_train1$sales, shampoo_sales_test$sales), 
-                  predicted = c(shampoo_sales_train1$sales, predicted), 
-                  time = shampoo_sales$time)
-```
-
-```{r}
-ggplot(gather(df_pred, obs_pred, value, -time) %>% 
-         mutate(obs_pred = factor(obs_pred, levels = c("predicted", "obs"))), 
-       aes(x = time, y = value, col = obs_pred, linetype = obs_pred)) +
-  geom_line() +
-  xlab("") + ylab("") +
-  scale_color_manual(values=c("black", "hotpink")) +
-  scale_linetype_manual(values=c(2, 1)) +
-  scale_x_date(date_labels = "%y %b", date_breaks = "1 month") +
-  theme_bw() + theme(legend.title = element_blank(),
-                     axis.text.x  = element_text(angle=45, vjust=0.5))
-```
-
-```{r}
-Forecast <- forecast(arima_model, h=12)
-plot(Forecast)
-Forecast
-```
-
-
-
-
-
+       labs(x = 'Date',       labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
     scale_y_continuous(breaks = seq(0,50000,5000)) +
-    scale_x_date()#date_breaks = '10 year',
+    scale_x_date())#date_breaks = '10 year',
                #date_labels = '%Y')
 ##
 ##
 ## SOMEONE NEEDS TO CHECK THE FLOW ! `
 ##
-##
+
+
+
 ```
