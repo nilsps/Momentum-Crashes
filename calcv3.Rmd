@@ -1,0 +1,42 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{python}
+import wrds
+import pandas as pd
+import numpy as np
+from pandas.tseries.offsets import *
+from scipy import stats
+import datetime as dt
+
+import matplotlib.pyplot as plt
+```
+
+```{r}
+db <- dbConnect(RPostgres::Postgres(), dbname = "stock_db")
+
+daily = tbl(db, "daily")
+
+df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
+
+df$date = df$date %>% as.POSIXct()  
+
+df[is.na(df)] = 0 
+# df = overview %>% dplyr::filter(ipo_year == 2021) %>% dplyr::filter(exchange == "NASDAQ")
+# df
+
+df$log_ret = function(){ log(df$adjusted+1 , demean = FALSE, standardize = FALSE)}
+
+df$log_ret = 
+
+```
+
+```{python}
+#df$logret =  
+
+
+# create log return for future usage
+df['logret'] = np.log(1+df['ret'])
+```

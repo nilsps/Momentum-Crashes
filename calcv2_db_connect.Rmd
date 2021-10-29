@@ -14,16 +14,16 @@ library(bsts)
 library(matrixStats)
 ```
 
-# ```{r}
-#   library(doParallel)
-#   library(snow)
-#   library(doSNOW)
-# cl <- makeCluster(detectCores()-1, type = "SOCK")
-#  
-# call_cluster_init = function(cl){
-#  registerDoParallel(cl)
-# }
-# ```
+```{r}
+   library(doParallel)
+   library(snow)
+   library(doSNOW)
+ cl <- makeCluster(detectCores()-1, type = "SOCK")
+  
+ call_cluster_init = function(cl){
+  registerDoParallel(cl)
+}
+```
 
 ```{r}
 db <- dbConnect(RPostgres::Postgres(), dbname = "stock_db")
@@ -40,7 +40,7 @@ df = na.omit(df)
 # df
 
 # dbWriteTable(db, "daily", value = df, overwrite = TRUE, append= F, row.names = FALSE)
-
+daily %>% dplyr::filter(ipo_year == 2021) %>% dplyr::filter(exchange == "NASDAQ")
 ```
 
 
@@ -73,7 +73,7 @@ day(dfa$shifted_date)<-days_in_month(dfa$shifted_date) # Sets last day of months
 
 dfa[is.na(dfa)] = 0 #set nas' to zero
 
-month_day = NULL
+month_day = NULL #free up ram
 ```
 
 
@@ -82,7 +82,7 @@ gaps= c(1) #c(1,7,30) # daily, weekly, monthly, return #### SET TO ONE AS THIS I
 
 dfa = dfa %>% group_by(stock_id) %>% arrange(date) #Ordering and sorting the data 
 
-returns = function(gaps){(df$close - lead(df$close, n= gaps)) / lead(df$close,n = gaps)} # Return function, gives return per month pr stock (roling returns)
+returns = function(gaps){(lead(df$close)- df$close)  / lead(df$close)} # Return function, gives return per month pr stock (roling returns)
 
 rets = as.data.frame(lapply(gaps,returns)) # Run function on the gaps(1) to get returns
 
@@ -162,6 +162,7 @@ df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute
 #month_day = NULL
 glimpse(df) #checking the data
 ```
+
 ```{r}
 library(data.table)
 dfa = df
@@ -171,7 +172,7 @@ dfa = dfa %>% filter(available_returns >= 8) # Provides the highest momentum sto
 glimpse(dfa) # Rechecking table 
 
 # normalize using the number of available returns
-dfa$cum_return = dfa$cum_return / dfa$available_returns
+dfa$cum_return = dfa$cum_return / dfa$available_returns #i dont know why this is here
 
 # cut returns for each date into deciles to determine winner/loser portfolios
 dfa$quantile = cut(dfa$cum_return,
@@ -184,9 +185,10 @@ dfa$quantile = cut(dfa$cum_return,
 ```{r}
 top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
 
+test_top = top[1:200,] 
 
-
-return_calculations = function(portfolio){ 
+return_calculations = function(portfolio){
+  call_cluster_init
   reb_month_top =  unique(top$date)
   portfolio$returns  = 1
   v = portfolio[1:3]
@@ -197,13 +199,12 @@ return_calculations = function(portfolio){
       portfolio = portfolio %>% filter(date == as.Date(dd))
       for (i in 1:nrow(portfolio)){
         if (nrow(portfolio) > 0){ 
-            x = df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to 
+            x = df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to invest in. 
             z = df %>% filter(stock_id == x[1,1]) %>%  filter(date > portfolio[i,2])
             m = z[1,2]   # returns the stock plus one month 
             n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
-            ret = (x$close   - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!            
+            ret = (n$close   - x$close  / x$close) #### This is DELTA !!!! NOT PERCENTAGE!            
             portfolio$returns[i]  = ret
-            print (ret)
             #top_portf = cbind(top_portf,as.matrix(holder))
             #return(top_portf)
         }
@@ -212,23 +213,13 @@ return_calculations = function(portfolio){
         } 
               
       }          
-  }
+    }
 }
+ret_calc = as.data.frame(return_calculations(top))
 
-top_temp = top
 
-library(parallel)
-mclapply(top_temp)
-  
-return_calculations(top_temp,return_calculations, mc.cores=30) 
-  
-EW_top 
-  
-  top_portf %>% mutate(p_cr = cumprod(1+))
-  return(returns)
-}
 
-top = top[1:3] %>% mutate(portfolio_return = cumprod(1 + rets$m_ret))
+
     
 df_temp = df %>% # Adding cumalative returns 
  mutate(portfolio_return = cumprod(1 + rets$m_ret))
