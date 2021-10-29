@@ -3,40 +3,188 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-```{python}
-import wrds
-import pandas as pd
-import numpy as np
-from pandas.tseries.offsets import *
-from scipy import stats
-import datetime as dt
-
-import matplotlib.pyplot as plt
+```{r}
+library(tidyquant)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(slider)
+library(bsts)
+library(matrixStats)
 ```
 
 ```{r}
-db <- dbConnect(RPostgres::Postgres(), dbname = "stock_db")
+#db <- dbConnect(RPostgres::Postgres(), dbname = "stock_db")
 
-daily = tbl(db, "daily")
+#daily = tbl(db, "daily")
 
-df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
+#df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
+load("tot_df.Rdata")
 
-df$date = df$date %>% as.POSIXct()  
+df = tot_df
 
 df[is.na(df)] = 0 
-# df = overview %>% dplyr::filter(ipo_year == 2021) %>% dplyr::filter(exchange == "NASDAQ")
-# df
 
-df$log_ret = function(){ log(df$adjusted+1 , demean = FALSE, standardize = FALSE)}
 
-df$log_ret = 
+
+### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
+df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
+df = dplyr::select(df, symbol, date, adjusted)
+#df = dplyr::group_by(df, symbol) 
+
+tot_df = NULL
+```
+
+```{r}
+df$return = (lead(df$adjusted)- df$adjusted)  / lead(df$adjusted)
+
+df$cr = cumprod(1 + df$return)
+```
+
+
+```{r}
+##
+## CREATING A MONTHLY DATASET ! 
+##
+
+#df_date = df_date as.Date.POSIXct(df_date, tryFormat = "%Y-%m-%d")
+
+month_day = LastDayInMonth(df$date) %>% as.Date()
+
+#elect (Convert(date, '2018-04-01'))
+df$date = df$date %>% as.Date()
+
+df = dplyr::filter(df, date == month_day) #Filters out all other dates for the month except last one
+
+df$ranking_start = df$date %m-% months(12) # Start ranking of the portf, -12 months (as per MC paper)
+
+day(df$ranking_start) = days_in_month(df$ranking_start) #Se day of data to last day of month
+
+df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
+
+day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
+
+dfa= data.table::data.table(df) #making a "working" table
+dfa$shifted_date<-dfa$date %m+% months(1) # Shifting the date with one month      
+day(dfa$shifted_date)<-days_in_month(dfa$shifted_date) # Sets last day of months to shifted month  
+
+dfa[is.na(dfa)] = 0 #set nas' to zero
+
+month_day = NULL #free up ram
+```
+
+```{r}
+
+##
+# Cross checking that both tables are in tibble
+##
+df = df %>% as.tibble()
+dfa = dfa %>% as.tibble()
+
+#names(dfa)[names(dfa) == "close"] = "close.x"
+
+x = c("symbol", "shifted_date", "return") # creates variables to copy later  
+return_cols = c() # Makes an empty vector where we get the returns 
+
+#packs_needed = c("dplyr", "tidyverse") #redundant info, was built for foreach loop
+
+for(i in c(2:12)){ # eleven months return 
+    dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
+    day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
+    
+    df = merge(df, # merge return using the shifted date
+                     dfa[x],
+                     by.x=c("symbol", "date"),
+                     by.y=c("symbol", "shifted_date"),
+                     all.x=TRUE
+                     )
+    
+    names(df)[names(df) == "return.x"] <- "return" # correct the column names
+    names(df)[names(df) == "return.y"] <-paste0("return", i)# adding the roling returns for months  
+    return_cols<-c(return_cols, paste0("return", i)) # adds the new cols in a list to remove from set later
+}
+
+
+return_cols # Checking return cols 
+df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
+df
+
+dfa=NULL # frees memory, dfa is no longer needed  
+df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
+#df = df[, -c(8:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
+
+#df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
+#return_cols=NULL
+#df_temp = NULL
+#rets = NULL
+#month_day = NULL
+glimpse(df) #checking the data
+```
+
+```{r}
+dfa = df
+
+# remove rows which have available_returns < 8 (less then 8 monthly return within the search)
+dfa = dfa %>% filter(available_returns >= 8) # Provides the highest momentum stocks 
+glimpse(dfa) # Rechecking table 
+
+# normalize using the number of available returns
+dfa$cum_return = dfa$cum_return / dfa$available_returns #i dont know why this is here
+
+# cut returns for each date into deciles to determine winner/loser portfolios
+dfa$quantile = cut(dfa$cum_return,
+    quantile(dfa$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+    include.lowest=TRUE, 
+    labels=FALSE)
+```
+
+```{r}
+top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
+
+top = top[1:200,]
+top$port_ret = 99
+ret = c(1:200)
+
+
+return_calculations = function(portfolio){
+  reb_month_top =  unique(top$date)
+  v = portfolio[1:3]
+  pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3)
+  count = 1
+    for (j in 1:length(reb_month_top)){
+      dd = reb_month_top[j]
+      portfolio = v
+      #print(dd)
+      portfolio = portfolio %>% filter(date == as.Date(dd))
+      for (i in 1:nrow(portfolio)){
+        if (nrow(portfolio) > 0){ 
+            x = df %>% filter(date == portfolio$date[i])%>% filter(symbol == portfolio$symbol[i])# The specific stock to invest in. 
+            z = df %>% filter(symbol == x[1,1]) %>%  filter(date > portfolio[i,2])
+            m = z[1,2]   # returns the stock plus one month 
+            n = df %>% filter(symbol == z[1,1]) %>% filter (date == m) # locates the return for this stock
+            ret[count]   = (n$adjusted   - x$adjusted  / x$adjusted)
+            #ll = portfolio$port_ret[count]  = ret 
+            #ret = NULL
+            setTxtProgressBar(pb,count)
+            print(ret)
+            #print(count)
+            #portfolio$port_ret[[count]] = ret[[count]] 
+            count = count + 1
+            
+            
+        }
+        else{
+          print(" NA for monthly return ")
+        }
+        
+      }
+     
+    }
+  return(ret)
+  close(pb)
+}
+
+x =(return_calculations(top))
 
 ```
 
-```{python}
-#df$logret =  
-
-
-# create log return for future usage
-df['logret'] = np.log(1+df['ret'])
-```
