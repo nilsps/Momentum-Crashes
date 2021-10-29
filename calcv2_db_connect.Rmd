@@ -212,27 +212,33 @@ for (i in 1:reb_month_top){
     #return(top_portf)
   }
 
+
+
 #}
+portfolio = top_portf
 
 test = function(portfolio){ 
   reb_month_top =  unique(top$date)
-    for (j in 1:reb_month_top){ 
-      portfolio = top[1:3] %>% filter(date == as.Date(reb_month_top[j]))
-        for (i in 1:nrow(portfolio)){
-            x =df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to invest 
+  portfolio$returns  = 1
+  portfolio = portfolio[1:3]
+    for (j in 1:length(reb_month_top)){
+      dd = reb_month_top[j]
+      print(dd)
+      portfolio = portfolio %>% filter(date == as.Date(dd))
+      for (i in 1:nrow(portfolio)){
+            x =df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to 
             z = df %>% filter(stock_id == x[1,1]) %>%  filter(date > portfolio[i,2])
             m = z[1,2]   # returns the stock plus one month 
             n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
-            ret = (x$close   - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!  
+            ret = (x$close   - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!            
             portfolio$returns[i]  = ret
             print (ret)
             #top_portf = cbind(top_portf,as.matrix(holder))
             #return(top_portf)
-  }
+      }          
   }
 }
-
-test(top_portf)
+test(top_portf) 
   
 EW_top 
   
