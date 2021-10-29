@@ -162,8 +162,6 @@ df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute
 #month_day = NULL
 glimpse(df) #checking the data
 ```
-
-
 ```{r}
 library(data.table)
 dfa = df
@@ -180,53 +178,26 @@ dfa$quantile = cut(dfa$cum_return,
     quantile(dfa$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
     include.lowest=TRUE, 
     labels=FALSE)
+```
 
-top = dfa %>% filter(quantile == 10) # making the best performance portf 
-top = top %>% arrange(date) # sorting after date  
-#top$cr_ret = top$close - lead(top$close) / lead(top$close) # Adds returns IDK if this will work here !!!!
 
-#####funk her#####
-
-reb_month_top =  unique(top$date)
-#holder = c()
-
-for (i in 1:reb_month_top){ 
-  top_portf = top[1:3] %>% filter(date == as.Date(reb_month_top[i]))
-  print(top_portf)
-}
-
-#ret_port = function(top_portf){
-  for (i in 1:nrow(top_portf)){
-    x = df %>% filter(date == top_portf$date[i]) # all stock on the investment day within the 10th quantile
-    y = x %>% filter(stock_id == top_portf$stock_id[i])# The specific stock to invest in 
-    z = df %>% filter(stock_id == y[1,1]) # all data for the specific stock from x
-    
-    
-    m = x[1,2]  %m+% months(1) # returns the stock plus one month 
-    n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
-    ret = (y$close  - n$close  / n$close) #### This is DELTA !!!! NOT PERCENTAGE!  
-    av =top_portf$returns[i]  = ret
-    holder[i] = ret
-    print (ret)
-    #top_portf = cbind(top_portf,as.matrix(holder))
-    #return(top_portf)
-  }
+```{r}
+top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
 
 
 
-#}
-portfolio = top_portf
-
-test = function(portfolio){ 
+return_calculations = function(portfolio){ 
   reb_month_top =  unique(top$date)
   portfolio$returns  = 1
-  portfolio = portfolio[1:3]
+  v = portfolio[1:3]
     for (j in 1:length(reb_month_top)){
       dd = reb_month_top[j]
+      portfolio = v
       print(dd)
       portfolio = portfolio %>% filter(date == as.Date(dd))
       for (i in 1:nrow(portfolio)){
-            x =df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to 
+        if (nrow(portfolio) > 0){ 
+            x = df %>% filter(date == portfolio$date[i])%>% filter(stock_id == portfolio$stock_id[i])# The specific stock to 
             z = df %>% filter(stock_id == x[1,1]) %>%  filter(date > portfolio[i,2])
             m = z[1,2]   # returns the stock plus one month 
             n = df %>% filter(stock_id == z[1,1]) %>% filter (date == m) # locates the return for this stock
@@ -235,10 +206,21 @@ test = function(portfolio){
             print (ret)
             #top_portf = cbind(top_portf,as.matrix(holder))
             #return(top_portf)
+        }
+        else{
+          print(" NA for monthly return ")
+        } 
+              
       }          
   }
 }
-test(top_portf) 
+
+top_temp = top
+
+library(parallel)
+mclapply(top_temp)
+  
+return_calculations(top_temp,return_calculations, mc.cores=30) 
   
 EW_top 
   
