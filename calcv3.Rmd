@@ -23,16 +23,33 @@ load("tot_df.Rdata")
 
 df = tot_df
 
-df[is.na(df)] = 0 
-
-
-
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
 df = dplyr::select(df, symbol, date, adjusted)
 #df = dplyr::group_by(df, symbol) 
 
 tot_df = NULL
+
+df = df %>% dplyer::filter(adjusted > 0) 
+
+# These stocks are removed due to wierd data.
+
+unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO")
+  
+df = dplyr::filter(df, !symbol %in% unwanted)
+
+
+
+
+######
+### Specialy stock that are removed 
+
+
+#Need to remove stocks that have adjusted zero or below!!!! 
+#  also remvoe stocks with zero close
+
+#  Try remove extreme high valued stocks
+  
 ```
 
 ```{r}
@@ -144,8 +161,6 @@ dfa$quantile = cut(dfa$cum_return,
 ```{r}
 top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
 
-#top = top[1:200,]
-
 return_calculations = function(portfolio){
   ret = c(1:length(portfolio))
   reb_month_top =  unique(top$date)
@@ -185,12 +200,9 @@ bot = dfa %>% filter(quantile == 1) %>% arrange(date) # making the best performa
 
 bot = bot[1:3] %>% na.omit()
 
-bot = bot[1:200,] 
-
-
 return_calculations = function(portfolio){
   ret = c(1:length(portfolio))
-  reb_month_top =  unique(top$date)
+  reb_month_top =  unique(portfolio$date)
   v = portfolio[1:3]
   pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3)
   count = 1
@@ -223,6 +235,47 @@ bot$port_ret = x
 
 #x = NULL
 ```
+
+```{r}
+####### Cumalative return calculation 
+
+cumalative_ret_portfolio = function (portfolio){ 
+reb_month =  unique(portfolio$date)
+  for (i in 1:length(reb_month)){
+    if (i == 1){ 
+    z = portfolio %>% filter(reb_month[i] == portfolio$date)
+    ew = (1/nrow(z)) 
+    ret = z$port_ret * ew 
+    tot_ret = sum(ret)
+    xx  = cumprod( 1 + tot_ret)
+    print(xx)
+    }
+    if (i > 1){ 
+    z = portfolio %>% filter(reb_month[i] == portfolio$date)
+    ew = (1/nrow(z)) 
+    ret = z$port_ret * ew 
+    tot_ret = sum(ret)
+    xx  = cumprod( xx + tot_ret)
+    print(xx)
+    }
+  }
+return(xx)
+}
+
+total_port_ret = function (portfolio){
+  portfolio = portfolio %>% filter(port_ret != 0)
+  tot_ret = (cumalative_ret_portfolio(portfolio))
+  return(tot_ret)
+  } 
+
+
+bot_score = total_port_ret(bot)
+top_score = total_port_ret(top)
+
+print(bot_score)
+print(top_score)
+```
+
 
 
 
