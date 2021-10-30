@@ -35,8 +35,11 @@ nyse = tq_exchange("NYSE")
 nasdaq = tq_exchange("NASDAQ")
 amex = tq_exchange("AMEX")
 
-all_ticks = rbind(nyse,nasdaq,amex) 
-all_ticks = all_ticks$symbol
+sp500_list = tq_index("SP500")
+
+#all_ticks = rbind(nyse,nasdaq,amex) 
+#all_ticks = all_ticks$symbol
+all_ticks = sp500_list$symbol 
 ```
 
 ```{r}
@@ -45,7 +48,7 @@ tot_df = tq_get(all_ticks,
                      from = '1960-01-01',
                      to = '2021-10-24',
                      get = "stock.prices")
-#save(tot_df, file="tot_df.Rdata")
+save(sp500_df, file="sp500_df.Rdata")
 #write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE)
 proc.time() - total_loop_time #stops timer     
 ```
@@ -89,7 +92,7 @@ stopCluster(cl)
 proc.time() - total_loop_time #stops timer  
 
 
-save(df, file="df1000.Rdata")
+#save(df, file="df1000.Rdata")
 ```
 
 

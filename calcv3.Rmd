@@ -19,10 +19,11 @@ library(matrixStats)
 #daily = tbl(db, "daily")
 
 #df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
-load("tot_df.Rdata")
+#load("tot_df.Rdata")
+load("sp500_df.Rdata")
 
-df = tot_df
-
+#df = tot_df
+df = sp500_df
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
 df = dplyr::select(df, symbol, date, adjusted)
@@ -30,14 +31,13 @@ df = dplyr::select(df, symbol, date, adjusted)
 
 tot_df = NULL
 
-df = df %>% dplyer::filter(adjusted > 0) 
+df = df %>% dplyr::filter(adjusted > 0) 
 
 # These stocks are removed due to wierd data.
 
-unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO")
+unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
   
 df = dplyr::filter(df, !symbol %in% unwanted)
-
 
 
 
@@ -69,7 +69,7 @@ df$return = (lead(df$adjusted)- df$adjusted)  / lead(df$adjusted) # Calculates d
 #df_date = df_date as.Date.POSIXct(df_date, tryFormat = "%Y-%m-%d")
 df$date = df$date %>% as.Date()
 
-df = filter(df, date > "1979-12-31")
+df = dplyr::filter(df, date > "2002-12-31")
 
 month_day = LastDayInMonth(df$date) %>% as.Date()
 
@@ -160,6 +160,7 @@ dfa$quantile = cut(dfa$cum_return,
 
 ```{r}
 top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
+#top_test = top[1:50,] 
 
 return_calculations = function(portfolio){
   ret = c(1:length(portfolio))
@@ -241,6 +242,7 @@ bot$port_ret = x
 
 cumalative_ret_portfolio = function (portfolio){ 
 reb_month =  unique(portfolio$date)
+portfolio = portfolio %>% group_by(date)
   for (i in 1:length(reb_month)){
     if (i == 1){ 
     z = portfolio %>% filter(reb_month[i] == portfolio$date)
@@ -248,15 +250,13 @@ reb_month =  unique(portfolio$date)
     ret = z$port_ret * ew 
     tot_ret = sum(ret)
     xx  = cumprod( 1 + tot_ret)
-    print(xx)
     }
     if (i > 1){ 
     z = portfolio %>% filter(reb_month[i] == portfolio$date)
     ew = (1/nrow(z)) 
-    ret = z$port_ret * ew 
+    ret = xx * ew 
     tot_ret = sum(ret)
     xx  = cumprod( xx + tot_ret)
-    print(xx)
     }
   }
 return(xx)
@@ -274,7 +274,27 @@ top_score = total_port_ret(top)
 
 print(bot_score)
 print(top_score)
+
+
+# dfx = df %>% filter(return == 0)
+# unique(dfx$symbol )
 ```
+
+```{r}
+top = top %>% arrange(date)
+
+ggplot(top, aes(x = date)) +
+       theme(legend.position = "top") +
+       geom_line(aes(y = port_ret), color = "darkred") + 
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,50000,5000)) +
+    scale_x_date()#date_breaks = '10 year',
+               #date_labels = '%Y')
+
+```
+
 
 
 
