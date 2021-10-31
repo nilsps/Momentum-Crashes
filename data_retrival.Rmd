@@ -48,6 +48,7 @@ tot_df = tq_get(all_ticks,
                      from = '1960-01-01',
                      to = '2021-10-24',
                      get = "stock.prices")
+sp500_df = tot_df
 save(sp500_df, file="sp500_df.Rdata")
 #write.csv(tot_df,"/home/nnx/Machinelearning 1/Momentum-Crashes/tot_df_db.csv", row.names = FALSE)
 proc.time() - total_loop_time #stops timer     

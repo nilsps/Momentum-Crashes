@@ -8,7 +8,6 @@ library(tidyquant)
 library(tidyverse)
 library(dplyr)
 library(plyr)
-library(slider)
 library(bsts)
 library(matrixStats)
 ```
@@ -39,7 +38,9 @@ unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
   
 df = dplyr::filter(df, !symbol %in% unwanted)
 
+sp500_df = NULL
 
+unwanted = NULL
 
 ######
 ### Specialy stock that are removed 
@@ -53,7 +54,9 @@ df = dplyr::filter(df, !symbol %in% unwanted)
 ```
 
 ```{r}
-df$return = (lead(df$adjusted)- df$adjusted)  / lead(df$adjusted) # Calculates daily returns 
+#Flytte under måneds data
+
+ # Calculates daily returns 
 
 #df$cr = cumprod(1 + df$return) # calculates cumalative returns based on stock 
 
@@ -88,8 +91,12 @@ df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
 
 day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
 
+df$return = (lead(df$adjusted)- df$adjusted)  / lead(df$adjusted)
+
 dfa= data.table::data.table(df) #making a "working" table
-dfa$shifted_date<-dfa$date %m+% months(1) # Shifting the date with one month      
+
+dfa$shifted_date<-dfa$date %m+% months(1) # Shifting the date with one month   
+
 day(dfa$shifted_date)<-days_in_month(dfa$shifted_date) # Sets last day of months to shifted month  
 
 dfa[is.na(dfa)] = 0 #set nas' to zero
@@ -156,20 +163,24 @@ dfa$quantile = cut(dfa$cum_return,
     quantile(dfa$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
     include.lowest=TRUE, 
     labels=FALSE)
+
+
 ```
 
 ```{r}
-top = dfa %>% filter(quantile == 10) %>% arrange(date) # making the best performance portf 
-#top_test = top[1:50,] 
+top = dfa %>% dplyr::filter(quantile == 10) %>% arrange(date)%>% na.omit() # making the best performance portf
+mid = dfa %>% dplyr::filter(quantile == 5) %>% arrange(date) %>% na.omit()
+bot = dfa %>% dplyr::filter(quantile == 1) %>% arrange(date) %>% na.omit()
 
+        
 return_calculations = function(portfolio){
-  ret = c(1:length(portfolio))
-  reb_month_top =  unique(top$date)
+  reb_month =  unique(portfolio$date)
   v = portfolio[1:3]
+  ret = as.list.data.frame(c(1:nrow(top)))
   pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3)
   count = 1
-    for (j in 1:length(reb_month_top)){
-      dd = reb_month_top[j]
+    for (j in 1:length(reb_month)){
+      dd = reb_month[j]
       portfolio = v
       portfolio = portfolio %>% filter(date == as.Date(dd))
       for (i in 1:nrow(portfolio)){
@@ -178,71 +189,39 @@ return_calculations = function(portfolio){
             z = df %>% filter(symbol == x[1,1]) %>%  filter(date > portfolio[i,2])
             m = z[1,2]   # returns the stock plus one month 
             n = df %>% filter(symbol == z[1,1]) %>% filter (date == m) # locates the return for this stock
-            ret[count]   = (n$adjusted   - x$adjusted  / x$adjusted)
+            ret[count] = ((n$adjusted   - x$adjusted)  / x$adjusted)
             setTxtProgressBar(pb,count)
             count = count + 1
         }
         else{
-          print(" NA for monthly return ")
+           print(" NA for monthly return ")
         }
       }
+     
     }
-  return(ret)
-  close(pb)
+   return(ret)
+   
 }
 
-x =(return_calculations(top))
-top$port_ret = x 
+top$port_ret = (return_calculations(top))
+mid$port_ret = (return_calculations(mid))
+bot$port_ret = (return_calculations(bot)) 
+
 ```
 
-```{r}
-bot = dfa %>% filter(quantile == 1) %>% arrange(date) # making the best performance portf 
-#top = top[1:200,]
-
-bot = bot[1:3] %>% na.omit()
-
-return_calculations = function(portfolio){
-  ret = c(1:length(portfolio))
-  reb_month_top =  unique(portfolio$date)
-  v = portfolio[1:3]
-  pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3)
-  count = 1
-    for (j in 1:length(reb_month_top)){
-      dd = reb_month_top[j]
-      portfolio = v
-      portfolio = portfolio %>% filter(date == as.Date(dd))
-      for (i in 1:nrow(portfolio)){
-        if (nrow(portfolio) > 0){ 
-            x = df %>% filter(date == portfolio$date[i])%>% filter(symbol == portfolio$symbol[i])# The specific stock to invest in. 
-            z = df %>% filter(symbol == x[1,1]) %>%  filter(date > portfolio[i,2])
-            m = z[1,2]   # returns the stock plus one month 
-            n = df %>% filter(symbol == z[1,1]) %>% filter (date == m) # locates the return for this stock
-            ret[count]   = (n$adjusted   - x$adjusted  / x$adjusted)
-            setTxtProgressBar(pb,count)
-            count = count + 1
-        }
-        else{
-          print(" NA for monthly return ")
-          print(portfolio$date[i])
-        }
-      }
-    }
-  return(ret)
-  close(pb)
-}
-
-x =(return_calculations(bot))
-bot$port_ret = x 
-
-#x = NULL
-```
 
 ```{r}
+selecter = c("symbol", "date", "port_ret")
+
+top = dplyr::select(top,selecter)
+top = dplyr::select(top,selecter)
+bot = dplyr::select(bot,selecter)
+
 ####### Cumalative return calculation 
 
 cumalative_ret_portfolio = function (portfolio){ 
 reb_month =  unique(portfolio$date)
-portfolio = portfolio %>% group_by(date)
+portfolio = portfolio #%>% group_by(date)
   for (i in 1:length(reb_month)){
     if (i == 1){ 
     z = portfolio %>% filter(reb_month[i] == portfolio$date)
@@ -276,8 +255,6 @@ print(bot_score)
 print(top_score)
 
 
-# dfx = df %>% filter(return == 0)
-# unique(dfx$symbol )
 ```
 
 ```{r}
@@ -294,6 +271,9 @@ ggplot(top, aes(x = date)) +
                #date_labels = '%Y')
 
 ```
+
+
+
 
 
 
