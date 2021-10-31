@@ -20,18 +20,23 @@ library(matrixStats)
 #df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
 #load("tot_df.Rdata")
 load("sp500_df.Rdata")
+#load("df.Rdata")
 
 #df = tot_df
 df = sp500_df
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
-df = dplyr::select(df, symbol, date, adjusted)
+
 #df = dplyr::group_by(df, symbol) 
 
 tot_df = NULL
 
 df = df %>% dplyr::filter(adjusted > 0) 
+df = df %>% dplyr::filter(close > 0) 
 
+df = dplyr::select(df, symbol, date, adjusted)
+
+df = df %>% dplyr::filter(date > "1980-01-01")
 # These stocks are removed due to wierd data.
 
 unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
@@ -41,9 +46,6 @@ df = dplyr::filter(df, !symbol %in% unwanted)
 sp500_df = NULL
 
 unwanted = NULL
-
-######
-### Specialy stock that are removed 
 
 
 #Need to remove stocks that have adjusted zero or below!!!! 
@@ -58,7 +60,7 @@ unwanted = NULL
 
  # Calculates daily returns 
 
-#df$cr = cumprod(1 + df$return) # calculates cumalative returns based on stock 
+#df$cr = cumprod(1 + df$adjusted) # calculates cumalative returns based on stock 
 
 #### I belive CR as become redundant atm. 
 ```
@@ -72,7 +74,7 @@ unwanted = NULL
 #df_date = df_date as.Date.POSIXct(df_date, tryFormat = "%Y-%m-%d")
 df$date = df$date %>% as.Date()
 
-df = dplyr::filter(df, date > "2002-12-31")
+#df = dplyr::filter(df, date > "2002-12-31")
 
 month_day = LastDayInMonth(df$date) %>% as.Date()
 
@@ -91,7 +93,9 @@ df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
 
 day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
 
-df$return = (lead(df$adjusted)- df$adjusted)  / lead(df$adjusted)
+df = df %>% group_by(symbol)
+
+df$return = ((lead(df$adjusted)- df$adjusted)  / df$adjusted)
 
 dfa= data.table::data.table(df) #making a "working" table
 
@@ -202,6 +206,9 @@ return_calculations = function(portfolio){
 top$port_ret = (return_calculations(top))
 bot$port_ret = (return_calculations(bot)) 
 
+
+### return calculations for each portfolio
+
 ```
 ```{r, warning = FALSE}
 
@@ -213,6 +220,7 @@ top = dplyr::select(top,selecter)
 bot = dplyr::select(bot,selecter)
 
 ####### Cumalative return calculation ###### This part is good 
+unique(top$date )
 cumalative_ret_portfolio = function (portfolio){ 
 reb_month =  unique(portfolio$date)
 tot_ret = c()
@@ -245,7 +253,14 @@ total_port_ret = function (portfolio){
 top_score = total_port_ret(top)
 bot_score = total_port_ret(bot)
 
+
+final_rets = top_score %>% as.tibble
+colnames(final_rets)[1] = "cum_rets" 
+dates = top$date  %>% as.Date() %>% unique()
+rownames(final_rets) = dates 
+
 print(top_score)
+print("==================================================================")
 print(bot_score)
 ```
 
@@ -268,12 +283,12 @@ reb_month =  unique(portfolio$date)
     z = portfolio %>% filter(reb_month[i] == portfolio$date)
     temp = tot_ret / nrow(z)
     ret = (1+z$port_ret) * temp
-    cu_ret[i] = ret 
     tot_ret = sum(ret)
     }
   }
 return(tot_ret)
 }
+
 
 total_port_ret = function (portfolio){
   portfolio = portfolio %>% filter(port_ret != 0)
@@ -281,19 +296,19 @@ total_port_ret = function (portfolio){
   return(tot_ret)
 } 
 
-bot_score = total_port_ret(bot)
-top_score = total_port_ret(top)
 
-print(bot_score)
+top_score = total_port_ret(top)
+bot_score = total_port_ret(bot)
+
 print(top_score)
+print(bot_score)
+
 ```
 
 ```{r}
-top = top %>% arrange(date)
-
-ggplot(top, aes(x = date)) +
+ggplot(final_ret, aes(x = value)) +
        theme(legend.position = "top") +
-       geom_line(aes(y = port_ret), color = "darkred") + 
+       geom_smooth(aes(y = cum_return ), color = "darkred") + 
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
