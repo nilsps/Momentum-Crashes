@@ -12,3 +12,4 @@ Overview.csv
 connect_postgres.Rmd
 Overview.CSV
 connect_postgres.nb.html
+sp500_df.Rdata
