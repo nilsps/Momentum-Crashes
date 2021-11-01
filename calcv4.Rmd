@@ -22,7 +22,7 @@ library(matrixStats)
 load("sp500_df.Rdata")
 #load("df.Rdata")
 
-df = tot_df
+#df = tot_df
 df = sp500_df
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
@@ -77,9 +77,6 @@ df$date = df$date %>% as.Date()
 #df = dplyr::filter(df, date > "2002-12-31")
 
 month_day = LastDayInMonth(df$date) %>% as.Date()
-
-#elect (Convert(date, '2018-04-01'))
-
 
  # This is due to extreme amounts of NAs in 1970s-1960 to get a better dataset. 
 
@@ -144,13 +141,68 @@ return_cols # Checking return cols
 df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
 df
 
-dfa=NULL # frees memory, dfa is no longer needed  
+#dfa=NULL # frees memory, dfa is no longer needed  
 df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
 #df = df[, -c(8:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
 
 #df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
 glimpse(df) #checking the data
 ```
+
+```{r, putting monthly deciles}
+
+portfolio = dfa #test var 
+temp_holder2 = null
+
+return_calculations = function(portfolio){
+  reb_month =  unique(portfolio$date)
+  reb_stock = unique(portfolio$symbol)
+  temp_holder = NULL
+  temp_holder2 = NULL
+  pb = txtProgressBar(min = 0, max = length(reb_stock), initial = 0, style = 3)
+  count = 1
+    for (j in 1:length(reb_stock)){
+      temp_holder = portfolio %>% filter(symbol == reb_stock[j])
+      temp_holder$rets  = (((lead(temp_holder$adjusted) - temp_holder$adjusted))  / temp_holder$adjusted)
+      temp_holder2 = rbind(temp_holder,temp_holder2) 
+      count = count + 1
+      setTxtProgressBar(pb,count)
+        }
+  return(temp_holder2)
+}  
+
+temp_holder2 = return_calculations(dfa)
+  
+portfolio = df
+  
+decile_seperation = function(portfolio){
+  portfolio = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
+  portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
+  reb_month =  unique(portfolio$date) # Finding all unique dates 
+  temp_holder = NULL # Empty working var
+  temp_holder2 = NULL # Empty working var 
+  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3)
+  count = 1
+    for (j in 1:length(reb_month)){
+      temp_holder = portfolio %>% filter(date == reb_month[j])
+      temp_holder2 = cut(portfolio$cum_return,
+          quantile(portfolio$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+          include.lowest=TRUE, 
+          labels=FALSE)
+      temp_holder = paste0(temp_holder,temp_holder2)
+      setTxtProgressBar(pb,count)
+      count = count +1 
+      
+    }
+  return(temp_holder)
+}  
+
+test = decile_seperation(df)
+
+dfa$mont_qantile = 
+
+```
+
 
 ```{r}
 dfa = df
@@ -210,6 +262,8 @@ bot$port_ret = (return_calculations(bot))
 ### return calculations for each portfolio
 
 ```
+
+
 ```{r, warning = FALSE}
 
 ###
@@ -317,11 +371,5 @@ ggplot(final_rets, aes(x = date)) +
                #date_labels = '%Y')
 
 ```
-
-
-
-
-
-
 
 
