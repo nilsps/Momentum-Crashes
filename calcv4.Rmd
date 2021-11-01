@@ -14,12 +14,12 @@ library(matrixStats)
 
 ```{r}
 #df = daily %>% dplyr::select(stock_id, date, adjusted) %>% as_tibble ()# connecting to db 
-#load("tot_df.Rdata")
-load("sp500_df.Rdata")
+load("tot_df.Rdata")
+#load("sp500_df.Rdata")
 #load("df.Rdata")
  
-#df = tot_df
-df = sp500_df
+df = tot_df
+#df = sp500_df
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them
 
@@ -40,7 +40,7 @@ unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
   
 df = dplyr::filter(df, !symbol %in% unwanted)
 
-sp500_df = NULL
+#sp500_df = NULL
 
 unwanted = NULL
 
@@ -169,8 +169,9 @@ glimpse(df) #checking the data
 # Then we will take every stock per month and drop it into a docile based on cumalative returns 
 
 #
-# NB! line 187 and 188 containes cum_ret, which i belive we should use for this projects 
+# NB! line 188 and 189 containes cum_ret, which i belive we should use for this projects 
 # Change those two outs, to use return will lead to a BIAS forward looking! But it gets better resaults.
+# This got resolved when using a larger dataset, SP500 provides very diffrent resaults!
 
 decile_seperation = function(portfolio){
   portfolio = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
@@ -254,6 +255,7 @@ mid_score = total_port_ret(mid) # runs on bot portf.
 bot_score = total_port_ret(bot) # runs on bot portf.
 ```
 
+
 ```{r}
 ##
 # Takes the dates and merges then with the scores, making a more user friendly experience
@@ -272,25 +274,55 @@ mid_score_reb = scores(mid_score, mid) # same but for mid score
 bot_score_reb = scores(bot_score, bot) # same but for bot score 
 ```
 
+```{r, warning = FALSE}
+total_table = function(){ 
+  if ((top_score_reb$date == bot_score_reb$date) && (top_score_reb$date == bot_score_reb$date)) {
+    total_score = NULL
+    total_score$date  = as.tibble(top_score_reb$date)
+    total_score$top = top_score_reb$cum_rets
+    total_score$mid = mid_score_reb$cum_rets
+    total_score$bot = bot_score_reb$cum_rets
+  return(total_score)
+  }
+}
 
-```{r}
-top_score_reb %>% arrange(desc(date)) # Shows table from prev, but starting at the highest date decending downwards
-mid_score_reb %>% arrange(desc(date)) # Same but for mid
-bot_score_reb %>% arrange(desc(date)) # Same but for bot.
+
+total_score = as.data.frame(total_table()) # Saves the output as dataframe, so we can translate date to date
+names(total_score)[names(total_score) == "value"] <- "date"
+total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 ```
 
 ```{r}
-# Not implimented yet 
+# Freeing memory by putting all unused variables to NULL 
+bot = NULL
+bot_score_reb = NULL
+dfa = NULL
+mid  = NULL 
+mid_score_reb = NULL 
+pb = NULL
+top = NULL
+top_score_reb = NULL
+bot_score = NULL
+mid_score = NULL
+return_cols = NULL 
+top_score = NULL 
+x = NULL
+```
 
-ggplot(top_score_reb, aes(x = date)) +
+```{r}
+# Visualization of the scores 
+
+ggplot(total_score, aes(x = date)) + # Uses main dataset
        theme(legend.position = "top") +
-       geom_line(aes(y = cum_rets ), color = "darkred") + 
+       geom_line(aes(y = top ), color = "green") +
+       geom_line(aes(y = mid), color = "orange") +
+       geom_line(aes(y = bot), color = "red") + 
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,100,10)) +
-    scale_x_date()#date_breaks = '10 year',
-               #date_labels = '%Y')
+    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_x_date(date_breaks = '5 year',
+               date_labels = '%Y')
 
 ```
 
