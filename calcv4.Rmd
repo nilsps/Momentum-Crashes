@@ -149,11 +149,8 @@ df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute
 glimpse(df) #checking the data
 ```
 
-```{r, putting monthly deciles}
-
-portfolio = dfa #test var 
-temp_holder2 = null
-
+```{r}
+#portfolio = dfa #test var 
 return_calculations = function(portfolio){
   reb_month =  unique(portfolio$date)
   reb_stock = unique(portfolio$symbol)
@@ -172,34 +169,44 @@ return_calculations = function(portfolio){
 }  
 
 temp_holder2 = return_calculations(dfa)
-  
-portfolio = df
-  
+```
+
+
+```{r, putting monthly deciles}
+#portfolio = df
+
 decile_seperation = function(portfolio){
   portfolio = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
   portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
   reb_month =  unique(portfolio$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
   temp_holder2 = NULL # Empty working var 
+  temp_holder3 = NULL # Empty working var 
+  temp_holder4 = NULL # Empty working var 
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3)
   count = 1
     for (j in 1:length(reb_month)){
       temp_holder = portfolio %>% filter(date == reb_month[j])
-      temp_holder2 = cut(portfolio$cum_return,
-          quantile(portfolio$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder2 = cut(temp_holder$cum_return,
+          quantile(temp_holder$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE)
-      temp_holder = paste0(temp_holder,temp_holder2)
-      setTxtProgressBar(pb,count)
-      count = count +1 
-      
-    }
-  return(temp_holder)
+       temp_holder3 = add_column(temp_holder ,as.tibble(temp_holder2))
+       nrow = nrow(temp_holder3)
+              count= count +1
+              setTxtProgressBar(pb,count)
+       if (j == 1){ 
+       temp_holder4  = temp_holder3
+       }
+       if (j > 1){
+       temp_holder4[nrow-1] = add_row(temp_holder4, temp_holder3)
+       }
+    } 
+  return(temp_holder4)
 }  
 
-test = decile_seperation(df)
+test = as.tibble(decile_seperation(df))
 
-dfa$mont_qantile = 
 
 ```
 
