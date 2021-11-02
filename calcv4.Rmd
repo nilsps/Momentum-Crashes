@@ -322,20 +322,20 @@ total_score$wml  =wml(total_score)
 
 ```{r}
 # Freeing memory by putting all unused variables to NULL 
-bot = NULL
-bot_score_reb = NULL
-dfa = NULL
-df = NULL
-mid  = NULL 
-mid_score_reb = NULL 
-pb = NULL
-top = NULL
-top_score_reb = NULL
-bot_score = NULL
-mid_score = NULL
-return_cols = NULL 
-top_score = NULL 
-x = NULL
+# bot = NULL
+# bot_score_reb = NULL
+# dfa = NULL
+# df = NULL
+# mid  = NULL 
+# mid_score_reb = NULL 
+# pb = NULL
+# top = NULL
+# top_score_reb = NULL
+# bot_score = NULL
+# mid_score = NULL
+# return_cols = NULL 
+# top_score = NULL 
+# x = NULL
 ```
 
 ```{r}
@@ -346,7 +346,7 @@ total_score$date = total_score$date %>% as.Date()
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
-       #geom_line(aes(y = mid, color = "mid" ), size = 1) +
+       #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
       #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
@@ -360,5 +360,55 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
     scale_color_manual(values = colors)
 
 ```
+
+```{r}
+# Producing cumalative returns for the FF data
+total_score$cu_ff_mkt_rf =  cumprod(1+total_score$ff_mkt_rf)
+total_score$cu_ff_smb =  cumprod(1+total_score$ff_smb)
+total_score$cu_ff_hml =  cumprod(1+total_score$ff_hml)
+total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
+```
+
+```{r}
+total_score$return_wml_reg = total_score$wml - total_score$cu_ff_rf 
+total_score
+
+# Regressing the returns 
+ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
+summary(ff_reg)
+```
+
+```{r}
+beta = cov(total_score$wml, total_score$ff_mkt_rf)/var(total_score$ff_mkt_rf)
+total_score$alpha = total_score$wml - total_score$ff_rf - beta * (total_score$ff_mkt_rf - total_score$ff_rf)
+
+```
+
+```{r}
+ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),colour="#009682")+
+  xlab("Date")+
+  ylab("Alpha")
+```
+```{r}
+mean(total_score$alpha)
+count(total_score$alpha > 0)
+count(total_score$alpha < 0)
+```
+
+```{r}
+# Recession indicators retrived from https://fred.stlouisfed.org/series/USREC
+
+rec_ind = read.csv("USREC.csv")
+
+rec_ind$date= rec_ind$DATE %>% as.Date()
+rec_ind= dplyr::select(rec_ind, c(date, USREC))
+
+day(rec_ind$date)<-days_in_month(rec_ind$date)
+```
+
+
+
+
+
 
 

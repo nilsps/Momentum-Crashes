@@ -2,6 +2,10 @@
 title: "R Notebook"
 output: html_notebook
 ---
+```{r}
+library(dplyr)
+library(lubridate)
+```
 
 
 ```{r}
@@ -10,11 +14,19 @@ output: html_notebook
 # Remember to scrub the data! Add Date as a column (or else it gets indexed) # Remove yearly data at the bottom 
 # Remove notes top and bottom on the file, or else you will get strange data. 
 
-ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE)
-ff_data$date = ff_data$date %>%  ym() 
-ff_data = ff_data %>% filter(date > "1979-12-01")
-
-
-
+ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
+ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
+ff_data = ff_data %>% filter(date > "1979-12-01")  # Filter out everydate below 1980
 ```
+
+```{r}
+# Devide by 100 to get the percentage and not the "percentage" :)
+ff_data$ff_mkt_rf = ff_data$Mkt.RF/100
+ff_data$ff_smb = ff_data$SMB/100
+ff_data$ff_hml = ff_data$HML/100
+ff_data$ff_rf = ff_data$RF/100
+
+day(ff_data$date) = days_in_month(ff_data$date ) # Changing the day in our dataset to match the other data (ie last day of month)
+```
+
 
