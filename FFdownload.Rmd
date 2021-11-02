@@ -1,0 +1,63 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+#devtools::install_github("sstoeckl/FFdownload")
+library(FFdownload)
+library(dplyr)
+library(timetk)
+library(data.table)
+library(lubridate)
+
+temptxt <- tempfile(fileext = ".txt")
+FFdownload(exclude_daily=TRUE,download=FALSE,download_only=TRUE,listsave=temptxt)
+```
+
+```{r}
+# Going to downlaod FFs 10 portfolios on momentum, momentum factors, research data factors etc 
+tempd <- tempdir()
+inputlist <- c("F-F_Momentum_Factor","F-F_ST_Reversal_Factor","10_Portfolios_Prior_12_2", "F-F_Research_Data_Factors")
+FFdownload(exclude_daily=TRUE,tempd=tempd,download=TRUE,download_only=TRUE,inputlist=inputlist)
+
+```
+
+```{r}
+tempf <- paste0(tempd,"\\FFdata.RData")
+getwd()
+FFdownload(output_file = tempf, exclude_daily=TRUE,tempd=tempd,download=FALSE,
+           download_only=FALSE,inputlist = inputlist)
+    
+```
+
+```{r}
+#
+# Retrieving data we might need later. 
+
+load(file = tempf)
+risk_free_rate = FFdata$`x_F-F_Research_Data_Factors`$monthly$Temp2 %>% timetk::tk_tbl(rename_index = "ym") %>%
+  left_join(FFdata$`x_F-F_Momentum_Factor`$monthly$Temp2 %>% timetk::tk_tbl(rename_index = "ym"),by="ym") %>%
+  left_join(FFdata$`x_F-F_LT_Reversal_Factor`$monthly$Temp2 %>% timetk::tk_tbl(rename_index = "ym"),by="ym") %>%
+  left_join(FFdata$`x_F-F_ST_Reversal_Factor`$monthly$Temp2 %>% timetk::tk_tbl(rename_index = "ym"),by="ym") %>% head()
+```
+
+```{r}
+
+# Extracting the Risk free rates from all downloads 
+ffdata = FFdata$`x_F-F_Research_Data_Factors`$monthly$Temp2 %>% 
+  as.data.frame() %>% 
+  rownames_to_column() 
+
+
+names(ffdata)[names(ffdata) == "rowname"] <- "date" # Rename the new data column
+ffdata = ffdata[643:nrow(ffdata),] %>% as.data.table() # Slice out 1980 untill today 
+ffdata$date = lubridate::my(ffdata$date)
+glimpse(risk_free_rate) # have a sneak peak at the data.
+```
+
+
+
+
+

@@ -22,7 +22,7 @@ library(matrixStats)
 load("sp500_df.Rdata")
 #load("df.Rdata")
 
-df = tot_df
+#df = tot_df
 df = sp500_df
 ### As log produce NAS in some cases, these are adjusted to zero Becoue the NAs' are linked to stock being delisted etc
 df[is.na(df)] = 0 # setting nas to zero  intead of omiting them

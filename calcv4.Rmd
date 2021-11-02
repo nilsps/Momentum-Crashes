@@ -297,6 +297,7 @@ total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 bot = NULL
 bot_score_reb = NULL
 dfa = NULL
+df = NULL
 mid  = NULL 
 mid_score_reb = NULL 
 pb = NULL
@@ -311,18 +312,20 @@ x = NULL
 
 ```{r}
 # Visualization of the scores 
+colors <- c("top" = "blue", "mid" = "red", "bot" = "orange")
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
-       theme(legend.position = "top") +
-       geom_line(aes(y = top ), color = "green") +
-       geom_line(aes(y = mid), color = "orange") +
-       geom_line(aes(y = bot), color = "red") + 
+       geom_line(aes(y = top, color = "top"), size = 1.5) +
+       geom_line(aes(y = mid, color = "mid" ), size = 1.5) +
+       geom_line(aes(y = bot, color = "bot"), size = 1.5) + 
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
     scale_y_continuous(breaks = seq(0,10,1)) +
     scale_x_date(date_breaks = '5 year',
-               date_labels = '%Y')
+               date_labels = '%Y',
+               color = "Legend")+
+    scale_color_manual(values = colors)
 
 ```
 

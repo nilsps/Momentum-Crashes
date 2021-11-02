@@ -1,0 +1,20 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+# Donwload research data from https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip
+# Select monthly dataset. 
+# Remember to scrub the data! Add Date as a column (or else it gets indexed) # Remove yearly data at the bottom 
+# Remove notes top and bottom on the file, or else you will get strange data. 
+
+ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE)
+ff_data$date = ff_data$date %>%  ym() 
+ff_data = ff_data %>% filter(date > "1979-12-01")
+
+
+
+```
+
