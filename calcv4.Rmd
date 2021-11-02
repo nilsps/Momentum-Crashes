@@ -58,7 +58,6 @@ unwanted = NULL
 ## CREATING A MONTHLY DATASET ! 
 ##
 
-#df_date = df_date as.Date.POSIXct(df_date, tryFormat = "%Y-%m-%d")
 df$date = df$date %>% as.Date()
 
 #df = dplyr::filter(df, date > "2002-12-31")
@@ -293,6 +292,35 @@ total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 ```
 
 ```{r}
+#
+# Goal: Take data from ff_data, regarding risk free rate etc. Filter it so we can fit it into the calculated dataset
+# 
+locate_ffdates = function(ff_data){ 
+  temp_holder = NULL # Working variable
+  for (i in 1:nrow(total_score)){   # Goes through all dates in total_score 
+  ff_data[i,]  = ff_data %>% filter(date == total_score$date[i])# filters out all the dates that are not in totalscore. 
+  }
+  return(ff_data) #Returns the data 
+}
+ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
+  
+total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
+```
+
+```{r}
+# Goal calculate WML portfolio 
+# 
+
+wml = function (total_score){
+  wml = total_score$top - total_score$bot + total_score$ff_rf    
+}
+
+total_score$wml  =wml(total_score) 
+```
+
+
+
+```{r}
 # Freeing memory by putting all unused variables to NULL 
 bot = NULL
 bot_score_reb = NULL
@@ -312,19 +340,23 @@ x = NULL
 
 ```{r}
 # Visualization of the scores 
-colors <- c("top" = "blue", "mid" = "red", "bot" = "orange")
+colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+total_score$date = total_score$date %>% as.Date()  
+#total_score$wml = total_score$wml %>% as.data.frame()
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
-       geom_line(aes(y = top, color = "top"), size = 1.5) +
-       geom_line(aes(y = mid, color = "mid" ), size = 1.5) +
-       geom_line(aes(y = bot, color = "bot"), size = 1.5) + 
+       geom_line(aes(y = top, color = "top"), size = 1) +
+       #geom_line(aes(y = mid, color = "mid" ), size = 1) +
+       geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = wml, color = "wml"), size = 1) + 
+      #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
+       geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) + 
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
     scale_y_continuous(breaks = seq(0,10,1)) +
     scale_x_date(date_breaks = '5 year',
-               date_labels = '%Y',
-               color = "Legend")+
+               date_labels = '%Y') +
     scale_color_manual(values = colors)
 
 ```
