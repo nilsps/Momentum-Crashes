@@ -16,7 +16,7 @@ library(lubridate)
 
 ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
 ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
-ff_data = ff_data %>% filter(date > "1979-12-01")  # Filter out everydate below 1980
+ff_data = ff_data %>% dplyr::filter(date > "1979-12-01")  # Filter out everydate below 1980
 ```
 
 ```{r}
@@ -26,7 +26,11 @@ ff_data$ff_smb = ff_data$SMB/100
 ff_data$ff_hml = ff_data$HML/100
 ff_data$ff_rf = ff_data$RF/100
 
-day(ff_data$date) = days_in_month(ff_data$date ) # Changing the day in our dataset to match the other data (ie last day of month)
+
+
+day(ff_data$date) = days_in_month(ff_data$date) # Changing the day in our dataset to match the other data (ie last day of month)
+
+ff_data$date = ff_data$date  %>% as.Date()
 ```
 
 
