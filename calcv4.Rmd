@@ -10,6 +10,17 @@ library(dplyr)
 library(plyr)
 library(bsts)
 library(matrixStats)
+library(doParallel)
+library(snow)
+library(doSNOW)
+
+#setting up do parallel processing clusters.
+
+cl <- makeCluster(detectCores()-1, type = "SOCK") # Use -1 of all cores available on machine 
+
+ call_cluster_init = function(cl){ # Clusterfunction to use later 
+   registerDoParallel(cl)
+}
 ```
 
 ```{r}
@@ -84,18 +95,20 @@ return_calculations = function(portfolio){
   temp_holder = NULL # working variable 
   temp_holder2 = NULL # Working variable 
   pb = txtProgressBar(min = 0, max = length(reb_stock), initial = 0, style = 3) # Progressbar 
-  count = 1 # Counter to see time remaining 
+
+  count = 1 # Counter to see time remaining
     for (j in 1:length(reb_stock)){
       temp_holder = portfolio %>% filter(symbol == reb_stock[j])
       temp_holder$return  = (((lead(temp_holder$adjusted) - temp_holder$adjusted))  / temp_holder$adjusted)
       temp_holder2 = rbind(temp_holder,temp_holder2) 
       count = count + 1
-      setTxtProgressBar(pb,count)
-        }
+      vv = setTxtProgressBar(pb,count)
+    }
   return(temp_holder2)
 }  
 
-df = return_calculations(df)
+
+df_x = return_calculations(df)
 ```
 
 ```{r}
@@ -466,11 +479,31 @@ ggplot(data=total_score,aes(x=date)) +
 
 ```
 
-```{r}
-VaR(total_score$top) 
-VaR(total_score$cu_ff_rf)
+```{r, value at risk }
+VaR(total_score$wml)# This needs to be investigated returns error 
+VaR(total_score$ff_mkt_rf)
 
 ```
+
+```{r}
+df_sharpe_wml = total_score[,c("date","wml")]
+df_sharpe_wml = df_sharpe_wml %>% as.data.frame()
+row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
+df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
+
+mean_rf = mean(total_score$ff_rf)
+
+SharpeRatio(df_sharpe_wml,Rf=mean_rf, FUN="StdDev")
+
+df_sharpe_mkt = total_score[,c("date","ff_mkt_rf")]
+SharpeRatio(df_sharpe_mkt,Rf=mean_rf, FUN="StdDev")
+
+###
+# How can we convert to time series when we dont have a standardized date or time frame. 
+## 
+
+```
+
 
 
 
