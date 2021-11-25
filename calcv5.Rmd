@@ -93,14 +93,7 @@ df[is.na(df)] = 0 #set nas' to zero
 month_day = NULL #free up ram
 ```
 
-er det så enkelt? 
-fjerner
 
-vi lager 2 til 12 returns cols 
-så fra formation data sier vi at vi må ha 8 måneder
-
-
-Mål filtrere ut alt som ikke har returns på 8 måneder fra start 
 ```{r}
 
 
@@ -115,7 +108,6 @@ filter_8month = function() {
       {
         rem_list = c(rem_list, t1)
       }
-      
     }
   return(rem_list)
   
@@ -128,14 +120,27 @@ df = dplyr::filter(df, !symbol %in% less_then_eight)
 less_then_eight = NULL
 ```
 
+```{r}
+dfa= data.table::data.table(df) #making a "working" table
+
+dfa$shifted_date<-dfa$date %m+% months(1) # Shifting the date with one month   
+
+day(dfa$shifted_date)<-days_in_month(dfa$shifted_date) # Sets last day of months to shifted month  
+
+df[is.na(df)] = 0 #set nas' to zero
+dfa[is.na(dfa)] = 0 #set nas' to zero
+
+month_day = NULL #free up ram
+```
+
 
 ```{r}
 
 ##
 # Cross checking that both tables are in tibble
 ##
-df = df %>% as_tibble()
-dfa = dfa %>% as_tibble()
+df = df %>% as.tibble()
+dfa = dfa %>% as.tibble()
 
 #names(dfa)[names(dfa) == "close"] = "close.x"
 
@@ -162,24 +167,22 @@ for(i in c(2:12)){ # eleven months return
 }
 
 
-return_cols # Checking return cols 
-df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
+df$available_returns = rowSums(!is.na(df[,return_cols])) # compute number of available returns
 
-df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
+df$cum_return = rowProds(1+as.matrix(df[,return_cols]), na.rm=T) # compute cumulative product
 #df = df[, -c(7:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
 
 #df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
 glimpse(df) #checking the data
-```
 
+df= df %>% filter(available_returns >= 8) 
+```
 
 ```{r, putting into monthly deciles}
 # This will first only take the stocks with more or equal to 8 month of return
 # Then it will Normalize the numbers, by taking the cumalative return and devide by availability to get more accurate numbers
 # Then we will take every stock per month and drop it into a docile based on cumalative returns 
 
-
-df = df %>% filter(available_returns >= 8)
 
 decile_seperation = function(portfolio){
   portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
@@ -192,8 +195,8 @@ decile_seperation = function(portfolio){
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
       temp_holder = portfolio %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder2 = cut(temp_holder$return, # put it into deciles, based on monthly return
-          quantile(temp_holder$return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder2 = cut(temp_holder$cum_return, # put it into deciles, based on monthly return
+          quantile(temp_holder$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE)
        temp_holder3= add_column(temp_holder ,as.tibble(temp_holder2)) # adds the decile score to the table 
@@ -225,9 +228,9 @@ bot = dfa %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performanc
 ### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding 
 ###### 
 selecter = c("symbol", "date", "return") # Variables to have in top and bot tibble
-top = dplyr::select(top,selecter) # Selects from selecter
-mid = dplyr::select(mid,selecter) # Selects from selecter
-bot = dplyr::select(bot,selecter) # Selects from selecter
+top = dplyr::select(top,all_of(selecter)) # Selects from selecter
+mid = dplyr::select(mid,all_of(selecter)) # Selects from selecter
+bot = dplyr::select(bot,all_of(selecter)) # Selects from selecter
 
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
@@ -264,6 +267,46 @@ bot_score = total_port_ret(bot) # runs on bot portf.
 ```
 
 
+```{r, warning = FALSE}
+
+###
+## DOES INVERSE WHEN SHORTING THE LOOSERS! 
+###
+bot = dplyr::select(bot,all_of(selecter)) # Selects from selecter
+
+inverse_cumalative_ret_portfolio = function (portfolio){ # Defining function
+reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+tot_ret = c() # Empthy vector 
+  for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+    if (i == 1){  # First round do this 
+    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
+    ret = ((1+((-1)*z$return)) * (1/nrow(z)))  # Investing 1 dollar divided by stocks multiplied with returns
+    tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
+    }
+    if (i > 1){ # When its beyond start date, (t+1). Do the following
+    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
+    temp = tot_ret / nrow(z) # devide what we earned in the previous period on the numbers of stocks to reinvest  
+    ret = ((1+(-1)*z$return) * temp) # multiply the investments dollar from previous step with the returns 
+    tot_ret[i]  = sum(ret) # Sum it all up 
+    }
+  }
+return(tot_ret) #returns the calculations out of the loop
+}
+
+short_total_port_ret = function (portfolio){ # Just a filter function to makesure everything has return over 0 
+  portfolio = portfolio %>% filter(return != 0) # Returns can not be zero
+  tot_ret = (inverse_cumalative_ret_portfolio(portfolio)) # calls the previous function (We run a function in a function)
+  return(tot_ret) # Returns the total returns 
+} 
+
+
+##
+## This section retrives a string of numbers (return per rebalancing period)
+##
+bot_score_inverse = short_total_port_ret(bot) # runs on bot portf.
+```
+
+
 ```{r}
 ##
 # Takes the dates and merges then with the scores, making a more user friendly experience
@@ -279,7 +322,8 @@ scores = function (portfolio, parent_portfolio){ # makes function
 
 top_score_reb = scores(top_score, top) #Calls the function on the score and the parrent 
 mid_score_reb = scores(mid_score, mid) # same but for mid score 
-bot_score_reb = scores(bot_score, bot) # same but for bot score 
+bot_score_reb = scores(bot_score, bot) # same but for bot score  bot_score_inverse
+bot_score_reb_inverse = scores(bot_score_inverse, bot)
 ```
 
 ```{r, warning = FALSE}
@@ -290,6 +334,7 @@ total_table = function(){
     total_score$top = top_score_reb$cum_rets
     total_score$mid = mid_score_reb$cum_rets
     total_score$bot = bot_score_reb$cum_rets
+    total_score$bot_inverse = bot_score_reb_inverse$cum_rets
   return(total_score)
   }
 }
@@ -350,7 +395,7 @@ total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving th
 # 
 
 wml = function (total_score){
-  wml = total_score$top - total_score$bot #+ total_score$ff_rf    
+  wml = total_score$top + total_score$bot_inverse #+ total_score$ff_rf    
 }
 
 total_score$wml  = wml (total_score) 
@@ -392,7 +437,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_y_continuous(breaks = seq(0,40,10)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
@@ -410,7 +455,7 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 ```{r}
 
-colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
@@ -421,7 +466,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,100,1)) +
+    scale_y_continuous(breaks = seq(0,50,5)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
