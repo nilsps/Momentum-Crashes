@@ -79,7 +79,7 @@ call_cluster_init()
 
 packs = c("tidyverse","dplyr")
 
-random_stocks = foreach (i = 1:numb_stocks, .packages = ) %dopar% {
+random_stocks = foreach (i = 1:numb_stocks, .packages = packs ) %dopar% {
                          filter_data = tot_df %>% filter(symbol == temp_stock[random_stocks[x]])
                          return(filter_data)
                          }

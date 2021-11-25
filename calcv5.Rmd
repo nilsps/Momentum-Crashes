@@ -1,0 +1,512 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyquant)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(bsts)
+library(matrixStats)
+#library(lubridate)
+#library(doParallel)
+#library(snow)
+#library(doSNOW)
+library(readr)
+library(glue)
+#setting up do parallel processing clusters.
+
+#cl <- makeCluster(detectCores()-1, type = "SOCK") # Use -1 of all cores available on machine 
+
+# call_cluster_init = function(cl){ # Clusterfunction to use later 
+#   registerDoParallel(cl)
+#}
+```
+
+```{r}
+df = read_csv2("sp500.csv",col_names = TRUE, col_types = cols(`date` = col_character(), 
+        `mcap` = col_number(), `close` = col_number(), 
+        `tot_ret` = col_number()))
+
+names(df)[2]  = "symbol"
+
+df[is.na(df)] = 0
+```
+
+```{r}
+##
+## CREATING A MONTHLY DATASET ! 
+##
+df$date =  as.Date(df$date, format = '%d.%m.%Y')
+
+#df = dplyr::filter(df, date > "2002-12-31")
+
+month_day = LastDayInMonth(df$date) %>% as.Date()
+
+df$ranking_start = df$date %m-% months(12) # Start ranking of the portf, -12 months (as per MC paper)
+
+day(df$ranking_start) = days_in_month(df$ranking_start) #Se day of data to last day of month
+
+df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
+
+day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
+
+df = df %>% filter(date > "2000-01-01")
+df = df %>% filter(close > 0) 
+df = df %>% filter(mcap > 0) 
+
+df = df %>% group_by(symbol) %>% arrange(date) 
+
+```
+
+```{r}
+# Return calculation for each stock in. More accurate then the "simple" lead - var /var method 
+# Normal methods gives high random scores, as it tries to calculate with next col
+# This method returns NA when there is no other date to calculate to (no next lead)
+
+return_calculations = function(portfolio){
+  reb_month =  unique(portfolio$date) # Find all unique stocks 
+  reb_stock = unique(portfolio$symbol) # Find all unique dates 
+  temp_holder = NULL # working variable 
+  temp_holder2 = NULL # Working variable 
+  pb = txtProgressBar(min = 0, max = length(reb_stock), initial = 0, style = 3) # Progressbar 
+  count = 1 # Counter to see time remaining
+    for (j in 1:length(reb_stock)){
+      temp_holder = portfolio %>% filter(symbol == reb_stock[j])
+      temp_holder$return  = (((lead(temp_holder$close) - temp_holder$close))  / temp_holder$close)
+      temp_holder2 = rbind(temp_holder,temp_holder2) 
+      count = count + 1
+      vv = setTxtProgressBar(pb,count)
+    }
+  return(temp_holder2)
+}  
+
+
+df = return_calculations(df)
+df = df %>% filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
+```
+
+```{r}
+df[is.na(df)] = 0 #set nas' to zero
+month_day = NULL #free up ram
+```
+
+er det så enkelt? 
+fjerner
+
+vi lager 2 til 12 returns cols 
+så fra formation data sier vi at vi må ha 8 måneder
+
+
+Mål filtrere ut alt som ikke har returns på 8 måneder fra start 
+```{r}
+
+
+filter_8month = function() {
+  rem_list = NULL
+  df = df %>% ungroup()
+  u_symbol = unique(df$symbol)
+    for(i in 1:length(u_symbol)){
+      temp = dplyr::filter(df, symbol %in% u_symbol[i])
+      t1 = u_symbol[i] 
+      if(nrow(temp) < 8 ) 
+      {
+        rem_list = c(rem_list, t1)
+      }
+      
+    }
+  return(rem_list)
+  
+}
+
+
+less_then_eight = filter_8month()
+df = dplyr::filter(df, !symbol %in% less_then_eight)
+
+less_then_eight = NULL
+```
+
+
+```{r}
+
+##
+# Cross checking that both tables are in tibble
+##
+df = df %>% as_tibble()
+dfa = dfa %>% as_tibble()
+
+#names(dfa)[names(dfa) == "close"] = "close.x"
+
+x = c("symbol", "shifted_date", "return") # creates variables to copy later  
+return_cols = c() # Makes an empty vector where we get the returns 
+
+pb = txtProgressBar(min = 1, max = 12, initial = 0, style = 3)
+count = 1
+for(i in c(2:12)){ # eleven months return 
+    dfa$shifted_date = dfa$date %m+% months(i) # shift by i months
+    day(dfa$shifted_date) = days_in_month(dfa$shifted_date) # Provides shift date with end of month
+  
+    df = merge(df, # merge return using the shifted date
+                     dfa[x],
+                     by.x=c("symbol", "date"),
+                     by.y=c("symbol", "shifted_date"),
+                     all.x=TRUE
+                     )
+    names(df)[names(df) == "return.x"] <- "return" # correct the column names
+    names(df)[names(df) == "return.y"] <-paste0("return", i)# adding the roling returns for months  
+    return_cols<-c(return_cols, paste0("return", i)) # adds the new cols in a list to remove from set later
+    count = count + 1 # just a counter for progress bar 
+    setTxtProgressBar(pb, count) # initiates the prog bar
+}
+
+
+return_cols # Checking return cols 
+df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
+
+df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
+#df = df[, -c(7:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
+
+#df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
+glimpse(df) #checking the data
+```
+
+
+```{r, putting into monthly deciles}
+# This will first only take the stocks with more or equal to 8 month of return
+# Then it will Normalize the numbers, by taking the cumalative return and devide by availability to get more accurate numbers
+# Then we will take every stock per month and drop it into a docile based on cumalative returns 
+
+
+df = df %>% filter(available_returns >= 8)
+
+decile_seperation = function(portfolio){
+  portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
+  reb_month =  unique(portfolio$date) # Finding all unique dates 
+  temp_holder = NULL # Empty working var
+  temp_holder2 = NULL # Empty working var 
+  temp_holder3 = NULL # Empty working var 
+  temp_holder4 = NULL # Empty working var
+  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
+  count = 1 #counter for usage in progress bar
+    for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
+      temp_holder = portfolio %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
+      temp_holder2 = cut(temp_holder$return, # put it into deciles, based on monthly return
+          quantile(temp_holder$return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+          include.lowest=TRUE, 
+          labels=FALSE)
+       temp_holder3= add_column(temp_holder ,as.tibble(temp_holder2)) # adds the decile score to the table 
+       temp_holder4= bind_rows(temp_holder3 ,temp_holder4)  # Binds the score and the folder for a stock and date
+       count = count + 1 # Adds 1 to the counter for progressbar 
+       setTxtProgressBar(pb,count) # Starting the progress bar
+    }  
+  return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
+}  
+
+
+dfa = as.tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
+
+names(dfa)[names(dfa) == "value"] <- "quantile" # Renames the colume value to quantile.  
+
+```
+
+
+```{r, warning = FALSE}
+top = dfa %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
+mid = dfa %>% dplyr::filter(quantile == 5) %>% arrange(date)  # worst performance portfolio based 
+bot = dfa %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
+```
+
+
+```{r, warning = FALSE}
+
+###
+### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding 
+###### 
+selecter = c("symbol", "date", "return") # Variables to have in top and bot tibble
+top = dplyr::select(top,selecter) # Selects from selecter
+mid = dplyr::select(mid,selecter) # Selects from selecter
+bot = dplyr::select(bot,selecter) # Selects from selecter
+
+cumalative_ret_portfolio = function (portfolio){ # Defining function
+reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+tot_ret = c() # Empthy vector 
+  for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+    if (i == 1){  # First round do this 
+    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
+    ret = (1+z$return) * (1/nrow(z))  # Investing 1 dollar divided by stocks multiplied with returns
+    tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
+    }
+    if (i > 1){ # When its beyond start date, (t+1). Do the following
+    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
+    temp = tot_ret / nrow(z) # devide what we earned in the previous period on the numbers of stocks to reinvest  
+    ret = (1+z$return) * temp # multiply the investments dollar from previous step with the returns 
+    tot_ret[i]  = sum(ret) # Sum it all up 
+    }
+  }
+return(tot_ret) #returns the calculations out of the loop
+}
+
+total_port_ret = function (portfolio){ # Just a filter function to makesure everything has return over 0 
+  portfolio = portfolio %>% filter(return != 0) # Returns can not be zero
+  tot_ret = (cumalative_ret_portfolio(portfolio)) # calls the previous function (We run a function in a function)
+  return(tot_ret) # Returns the total returns 
+} 
+
+
+##
+## This section retrives a string of numbers (return per rebalancing period)
+##
+top_score = total_port_ret(top) # runs the script on top portfolio 
+mid_score = total_port_ret(mid) # runs on bot portf.
+bot_score = total_port_ret(bot) # runs on bot portf.
+```
+
+
+```{r}
+##
+# Takes the dates and merges then with the scores, making a more user friendly experience
+##
+scores = function (portfolio, parent_portfolio){ # makes function
+  portfolio = portfolio %>% as.tibble # converts the score into a tibble for easier processing 
+  colnames(portfolio)[1] = "cum_rets"  # Rename the cumalative returns 
+  dates = parent_portfolio$date  %>% as.Date() %>% unique() # Find the dates from the parent calulations (pre last function)
+  portfolio$date  =  dates  # takes the dates and put them into tbe portfolio
+  return(portfolio) # Returns resaults 
+
+} 
+
+top_score_reb = scores(top_score, top) #Calls the function on the score and the parrent 
+mid_score_reb = scores(mid_score, mid) # same but for mid score 
+bot_score_reb = scores(bot_score, bot) # same but for bot score 
+```
+
+```{r, warning = FALSE}
+total_table = function(){ 
+  if ((top_score_reb$date == bot_score_reb$date) && (top_score_reb$date == bot_score_reb$date)) {
+    total_score = NULL
+    total_score$date  = as.tibble(top_score_reb$date)
+    total_score$top = top_score_reb$cum_rets
+    total_score$mid = mid_score_reb$cum_rets
+    total_score$bot = bot_score_reb$cum_rets
+  return(total_score)
+  }
+}
+
+
+total_score = as.data.frame(total_table()) # Saves the output as dataframe, so we can translate date to date
+names(total_score)[names(total_score) == "value"] <- "date"
+total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
+```
+
+```{r}
+# Donwload research data from https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip
+# Select monthly dataset. 
+# Remember to scrub the data! Add Date as a column (or else it gets indexed) # Remove yearly data at the bottom 
+# Remove notes top and bottom on the file, or else you will get strange data. 
+
+ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
+ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
+ff_data = ff_data %>% dplyr::filter(date > "1979-12-01")  # Filter out everydate below 1980
+```
+
+```{r}
+# Devide by 100 to get the percentage and not the "percentage" :)
+ff_data$ff_mkt_rf = ff_data$Mkt.RF/100
+ff_data$ff_smb = ff_data$SMB/100
+ff_data$ff_hml = ff_data$HML/100
+ff_data$ff_rf = ff_data$RF/100
+
+
+
+day(ff_data$date) = days_in_month(ff_data$date) # Changing the day in our dataset to match the other data (ie last day of month)
+
+ff_data$date = ff_data$date  %>% as.Date()
+```
+
+```{r}
+#
+# Goal: Take data from ff_data, regarding risk free rate etc. Filter it so we can fit it into the calculated dataset
+#
+
+locate_ffdates = function(ff_data){
+  temp_var1 = NULL
+  temp_var2 = NULL
+  for (i in 1:nrow(total_score)){   # Goes through all dates in total_score
+    temp_var1   = ff_data %>% dplyr::filter(date == total_score$date[i])# filters out all the dates that are not in totalscore.
+    temp_var2= bind_rows(temp_var1 ,temp_var2)
+  }
+  return(temp_var2) #Returns the data 
+}
+ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
+  
+total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
+```
+
+
+```{r}
+# Goal calculate WML portfolio 
+# 
+
+wml = function (total_score){
+  wml = total_score$top - total_score$bot #+ total_score$ff_rf    
+}
+
+total_score$wml  = wml (total_score) 
+```
+
+
+
+```{r}
+# Freeing memory by putting all unused variables to NULL 
+# bot = NULL
+# bot_score_reb = NULL
+# dfa = NULL
+# df = NULL
+# mid  = NULL 
+# mid_score_reb = NULL 
+# pb = NULL
+# top = NULL
+# top_score_reb = NULL
+# bot_score = NULL
+# mid_score = NULL
+# return_cols = NULL 
+# top_score = NULL 
+# x = NULL
+```
+
+```{r}
+# Visualization of the scores 
+colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+total_score$date = total_score$date %>% as.Date()  
+#total_score$wml = total_score$wml %>% as.data.frame()
+
+ggplot(total_score, aes(x = date)) + # Uses main dataset
+       geom_line(aes(y = top, color = "top"), size = 1) +
+       geom_line(aes(y = mid, color = "mid" ), size = 1) + 
+       geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = wml, color = "wml"), size = 1) + 
+      #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
+       geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) + 
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_x_date(date_breaks = '5 year',
+               date_labels = '%Y') +
+    scale_color_manual(values = colors)
+
+```
+
+```{r}
+# Producing cumalative returns for the FF data
+total_score$cu_ff_mkt_rf =  cumprod(1+total_score$ff_mkt_rf)
+total_score$cu_ff_smb =  cumprod(1+total_score$ff_smb)
+total_score$cu_ff_hml =  cumprod(1+total_score$ff_hml)
+total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
+```
+
+
+```{r}
+
+colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+total_score$date = total_score$date %>% as.Date()  
+
+ggplot(total_score, aes(x = date)) + # Uses main dataset
+       geom_line(aes(y = top, color = "top"), size = 1) +
+       geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = wml, color = "wml"), size = 1) + 
+       geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,100,1)) +
+    scale_x_date(date_breaks = '5 year',
+               date_labels = '%Y') +
+    scale_color_manual(values = colors)
+```
+
+
+
+
+```{r}
+total_score$return_wml_reg = total_score$wml - total_score$cu_ff_rf 
+total_score
+
+# Regressing the returns 
+ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
+summary(ff_reg)
+```
+
+```{r}
+beta = cov(total_score$wml, total_score$ff_mkt_rf)/var(total_score$ff_mkt_rf)
+total_score$alpha = total_score$wml - total_score$ff_rf - beta * (total_score$ff_mkt_rf - total_score$ff_rf)
+
+```
+
+```{r}
+ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),colour="#009682")+
+  xlab("Date")+
+  ylab("Alpha")
+```
+```{r}
+mean(total_score$alpha)
+count(total_score$alpha > 0)
+count(total_score$alpha < 0)
+```
+
+```{r, warning=FALSE}
+# Recession indicators retrived from https://fred.stlouisfed.org/series/USREC
+
+rec_ind = read.csv("USREC.csv")
+
+rec_ind$date= rec_ind$DATE %>% as.Date()
+rec_ind= dplyr::select(rec_ind, c(date, USREC))
+
+day(rec_ind$date)<-days_in_month(rec_ind$date)
+
+dates_rec_ind = locate_ffdates(rec_ind) #using the function on the FF data to get Risk free return and other data
+  
+total_score = merge(total_score, dates_rec_ind, by.x="date", by.y="date") # Moving the dates into 
+
+total_score$bear_market = total_score$USREC*6.5
+
+ggplot(data=total_score,aes(x=date)) + 
+            geom_area(aes(y=USREC,color="red"),fill=rgb(red = 1, green = 0, blue = 0, alpha = 0.5))+
+            geom_line(aes(y=wml, color="WML"))+
+            xlab("Date")+
+            ylab("Dollar value of investment")+
+            ylim(0,6.5)
+
+```
+
+```{r, value at risk }
+VaR(total_score$wml)# This needs to be investigated returns error 
+VaR(total_score$ff_mkt_rf)
+
+```
+
+```{r}
+df_sharpe_wml = total_score[,c("date","wml")]
+df_sharpe_wml = df_sharpe_wml %>% as.data.frame()
+#row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
+#df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
+
+mean_rf = mean(total_score$ff_rf)
+
+# This is done becouse we want to 
+df_sharpe_wml <- xts(x = df_sharpe_wml[, -1], # use all columns except for first column (date) as data
+                   order.by = as.Date(df_sharpe_wml$date) # Convert Date column from factor to Date and use as time index
+                   )
+
+SharpeRatio(df_sharpe_wml[, 1, drop = FALSE]  ,Rf=mean_rf, FUN="StdDev")
+
+df_sharpe_mkt = total_score[,c("date","ff_mkt_rf")]
+SharpeRatio(df_sharpe_mkt,Rf=mean_rf, FUN="StdDev")
+
+###
+# How can we convert to time series when we dont have a standardized date or time frame. 
+## 
+```
+

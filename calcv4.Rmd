@@ -108,7 +108,7 @@ return_calculations = function(portfolio){
 }  
 
 
-df_x = return_calculations(df)
+df = return_calculations(df)
 ```
 
 ```{r}
@@ -149,7 +149,6 @@ for(i in c(2:12)){ # eleven months return
                      by.y=c("symbol", "shifted_date"),
                      all.x=TRUE
                      )
-    
     names(df)[names(df) == "return.x"] <- "return" # correct the column names
     names(df)[names(df) == "return.y"] <-paste0("return", i)# adding the roling returns for months  
     return_cols<-c(return_cols, paste0("return", i)) # adds the new cols in a list to remove from set later
@@ -162,7 +161,7 @@ return_cols # Checking return cols
 df$available_returns = rowSums(!is.na(df[,return_cols[2:11]])) # compute number of available returns
 
 df$cum_return = rowProds(1+as.matrix(df[,return_cols[2:11]]), na.rm=T) # compute cumulative product
-df = df[, -c(7:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
+#df = df[, -c(7:17)] # WARNING HARD CODED! Removes the m_rets previously calculated  
 
 #df<-df[, !return_cols[2:11]] # drop return_cols (not needed anymore)
 glimpse(df) #checking the data
@@ -348,10 +347,10 @@ total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving th
 # 
 
 wml = function (total_score){
-  wml = total_score$top - total_score$bot + total_score$ff_rf    
+  wml = total_score$top - total_score$bot #+ total_score$ff_rf    
 }
 
-total_score$wml  =wml (total_score) 
+total_score$wml  = wml (total_score) 
 ```
 
 
@@ -382,7 +381,7 @@ total_score$date = total_score$date %>% as.Date()
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
-       #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
+       geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
       #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
@@ -419,7 +418,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_y_continuous(breaks = seq(0,100,1)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
@@ -488,12 +487,17 @@ VaR(total_score$ff_mkt_rf)
 ```{r}
 df_sharpe_wml = total_score[,c("date","wml")]
 df_sharpe_wml = df_sharpe_wml %>% as.data.frame()
-row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
-df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
+#row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
+#df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
 
 mean_rf = mean(total_score$ff_rf)
 
-SharpeRatio(df_sharpe_wml,Rf=mean_rf, FUN="StdDev")
+# This is done becouse we want to 
+df_sharpe_wml <- xts(x = df_sharpe_wml[, -1], # use all columns except for first column (date) as data
+                   order.by = as.Date(df_sharpe_wml$date) # Convert Date column from factor to Date and use as time index
+                   )
+
+SharpeRatio(df_sharpe_wml[, 1, drop = FALSE]  ,Rf=mean_rf, FUN="StdDev")
 
 df_sharpe_mkt = total_score[,c("date","ff_mkt_rf")]
 SharpeRatio(df_sharpe_mkt,Rf=mean_rf, FUN="StdDev")
@@ -501,8 +505,8 @@ SharpeRatio(df_sharpe_mkt,Rf=mean_rf, FUN="StdDev")
 ###
 # How can we convert to time series when we dont have a standardized date or time frame. 
 ## 
-
 ```
+
 
 
 
