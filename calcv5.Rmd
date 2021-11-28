@@ -162,36 +162,40 @@ z = 0
 df$v_weights  = v_weights(df)
 ```
 
-
 ```{r}
+return_function = function(portfolio,period){
+  x = (portfolio$close - lag(portfolio$close, n = period))  / lag(portfolio$close, n = period)
+  return(x)
+}
+
+ret_2_12= function (portfolio){ # Defining function
+  uniq_stocks =  unique(portfolio$symbol) # finds each stock to calc returns
+  temp_holder = 0 %>% as.data.frame()
+  temp_holder2 = 0 %>% as.data.frame()
+  temp_holder3 = 0 %>% as.data.frame()
+  z = 0 %>% as.data.frame()
+    for (i in 1:length(uniq_stocks)){ # for each date we have in the portfolio do this
+      z = portfolio %>% filter(uniq_stocks[i] == symbol)
+      for(j in 2:12) {
+        temp_holder = return_function(z,j)
+        name = paste0("ret", sep = "_", j)
+        z[[name]] =  temp_holder 
+        if (j == 12){
+          temp_holder2  = bind_rows(temp_holder2, z)
+        } 
+     }
+    }
+  return(temp_holder2)
+}  
+
+test  = ret_2_12(df)
+
+df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
+
 
 ```
 
-
-
-```{r}
-library(reshape2)
-
-#lage 12 nye cols
-
-return_mat = matrix(data= NA, ncol = 11 , nrow = nrow(df) ) %>% as_tibble()
-
-names(return_mat) = paste0("return", sep = "_", 2:12)
-
-
-
-
-dcast(df, 1 ~ cols)
-temp_mat = t(tibble(cols = 0))
-names(temp_mat, c(paste0("return", sep = "_", 2:12)))
-
-#names(temp_mat) = c(1,2,3)
-
-#
-# NEED TO ADD WEIGHTS 
-# 
-
-
+```{r} 
 cumalative = function (portfolio, weights){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
 tot_ret = c() # Empthy vector 
