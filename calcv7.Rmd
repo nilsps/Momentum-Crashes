@@ -73,34 +73,6 @@ df = df %>% filter(date < "2021-10-01") # Last calculations does not have anythi
 
 ```
 
-
-```{r}
-# Creates monthly value weights per stock 
-
-v_weights= function (portfolio){ # Defining function
-reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
-temp_holder = 0 %>% as.data.frame()
-temp_holder2 = 0 %>% as.data.frame()
-z = 0 
-count = 0 
-pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
-  for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-    z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
-    tot_w = sum(z$mcap)  
-    temp_holder = (z$mcap/tot_w) %>% as.data.frame()
-    temp_holder2 = bind_rows(temp_holder,temp_holder2)
-    count = count + 1 # Adds 1 to the counter for progressbar 
-    setTxtProgressBar(pb,count) # Starting the progress bar
-      if (i == 1){
-        temp_holder2 = temp_holder2 %>% slice(-c(nrow(temp_holder2)))
-      }
-    }
-    return(temp_holder2)
-}
-
-df$v_weights  = v_weights(df)
-```
-
 ```{r}
 return_function = function(portfolio,period){
   x = (portfolio$close - lag(portfolio$close, n = period))  / lag(portfolio$close, n = period)
@@ -142,8 +114,8 @@ test = NULL
 
 her skal vi lage en ny kolonne der vi legger til alle returns eller totalt med returns slik at det er mer en 8 som skal til 
 ```{r}
-df$available_returns = rowSums(!is.na(df[9:19])) # compute number of available returns
-df$cum_return = rowProds(1+as.matrix(df[9:19]), na.rm=T)
+df$available_returns = rowSums(!is.na(df[8:18])) # compute number of available returns
+df$cum_return = rowProds(1+as.matrix(df[8:18]), na.rm=T)
  
 ```
 
@@ -178,6 +150,52 @@ names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quan
 
 ```
 
+```{r}
+# Creates monthly value weights per stock 
+
+v_weights= function (portfolio){ # Defining function
+  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+  temp_holder = 0 %>% as.data.frame()
+  temp_holder2 = 0 %>% as.data.frame()
+  temp_holder3 = 0 %>% as.data.frame()
+  temp_holder4 = 0 %>% as.data.frame()
+  z = 0 
+  count = 0 
+  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
+    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+      z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
+      count = count + 1 # Adds 1 to the counter for progressbar 
+      setTxtProgressBar(pb,count) # Starting the progress bar
+        for (j in 1:10){ 
+          x = z
+          a = x %>% filter(quantile == j)
+          tot_w = sum(a$mcap)  
+          a$vw  = (a$mcap/tot_w) %>% as.data.frame()
+          temp_holder = bind_rows(a,temp_holder) 
+          #ret = bind_rows(a,a) 
+          #a$vw  = bind_rows(temp_holder,temp_holder2)
+          if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
+             temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
+             } 
+          # }
+          #if (j == 10){
+            #ret = bind_rows(a,a) 
+        #} 
+      }
+    }
+  return(temp_holder)
+}  
+        
+df  = v_weights(df)
+
+
+names(df)[ncol(df)] = 'value_w'
+
+dfx = df %>% filter(quantile == 1) %>% filter(date == "2008-12-31") # Checking that weights sum to one 
+
+sum(dfx$vw) # OK if it sums to one
+```
+
 
 ```{r, warning = FALSE}
 top = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
@@ -190,29 +208,35 @@ bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance
 ###
 ### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding EQUALY WEIGHTED
 ###### 
-selecter = c("symbol", "date", "return") # Variables to have in top and bot tibble
+selecter = c("symbol", "date", "return", "value_w") # Variables to have in top and bot tibble
 top = dplyr::select(top,all_of(selecter)) # Selects from selecter
 mid = dplyr::select(mid,all_of(selecter)) # Selects from selecter
 bot = dplyr::select(bot,all_of(selecter)) # Selects from selecter
 
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
-tot_ret = c() # Empthy vector 
+tot_ret = c() # empty vector 
+sum_w = 0
+temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
     if (i == 1){  # First round do this 
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
-    ret = (1+z$return) * (1/nrow(z))  # Investing 1 dollar divided by stocks multiplied with returns
-    tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
+      z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
+      sum = sum(z$value_w) 
+      ret = (1+z$return) * z$value_w  # Investing 1 dollar divided by stocks multiplied with returns
+      tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
     }
     if (i > 1){ # When its beyond start date, (t+1). Do the following
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
-    temp = tot_ret / nrow(z) # devide what we earned in the previous period on the numbers of stocks to reinvest  
-    ret = (1+z$return) * temp # multiply the investments dollar from previous step with the returns 
-    tot_ret[i]  = sum(ret) # Sum it all up 
+      z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
+      sum_w = sum(z$value_w) 
+      temp = tot_ret / sum_w  # devide what we earned in the previous period on the numbers of stocks to reinvest 
+      ret = (1+z$return) * temp * z$value_w # multiply the investments dollar from previous step with the returns 
+      tot_ret[i]  = sum(ret) # Sum it all up 
     }
   }
 return(tot_ret) #returns the calculations out of the loop
 }
+
+test_top= cumalative_ret_portfolio(top)
 
 total_port_ret = function (portfolio){ # Just a filter function to makesure everything has return over 0 
   portfolio = portfolio %>% filter(return != 0) # Returns can not be zero
@@ -229,35 +253,7 @@ mid_score = total_port_ret(mid) # runs on bot portf.
 bot_score = total_port_ret(bot) # runs on bot portf.
 ```
 
-```{r}
-# Creates monthly value weights per stock 
-v_weights= function (portfolio){ # Defining function
-  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
-  temp_holder = 0 %>% as.data.frame()
-  temp_holder2 = 0 %>% as.data.frame()
-  z = 0 
-  count = 0 
-  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
-    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-      z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
-      count = count + 1 # Adds 1 to the counter for progressbar 
-      setTxtProgressBar(pb,count) # Starting the progress bar
-        for (j in 1:10){ 
-          x = z
-          a = x %>% filter(quantile == j)
-          tot_w = sum(a$mcap)  
-          temp_holder = (a$mcap/tot_w) %>% as.data.frame()
-          temp_holder2 = bind_rows(temp_holder,temp_holder2)
-      }
-    }
-  return(temp_holder2)
-}  
-        
-vw  = v_weights(df)
-vw = vw %>% slice(-c(nrow(vw)))
-names(vw)[names(vw) == "."] <- "vw"
-df = cbind(df,vw )
-```
+
 
 ```{r, warning = FALSE}
 
