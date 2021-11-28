@@ -36,16 +36,6 @@ df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
 #df = dplyr::filter(df, date > "2002-12-31")
 
-month_day = LastDayInMonth(df$date) %>% as.Date()
-
-df$ranking_start = df$date %m-% months(12) # Start ranking of the portf, -12 months (as per MC paper)
-
-day(df$ranking_start) = days_in_month(df$ranking_start) #Se day of data to last day of month
-
-df$ranking_end = df$date %m-% months(2) # Per MC paper subtract two months
-
-day(df$ranking_end) = days_in_month(df$ranking_end) # set day of the date = last day of the month
-
 df = df %>% filter(date > "2000-01-01")
 #df = df %>% filter(close > 0) 
 #df = df %>% filter(mcap > 0) 
@@ -92,14 +82,18 @@ reb_month =  unique(portfolio$date) # finds each re-balancing months from the po
 temp_holder = 0 %>% as.data.frame()
 temp_holder2 = 0 %>% as.data.frame()
 z = 0 
+count = 0 
+pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
     z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
     tot_w = sum(z$mcap)  
     temp_holder = (z$mcap/tot_w) %>% as.data.frame()
     temp_holder2 = bind_rows(temp_holder,temp_holder2)
-    if (i == 1){
-      temp_holder2 = temp_holder2 %>% slice(-c(nrow(temp_holder2)))
-    }
+    count = count + 1 # Adds 1 to the counter for progressbar 
+    setTxtProgressBar(pb,count) # Starting the progress bar
+      if (i == 1){
+        temp_holder2 = temp_holder2 %>% slice(-c(nrow(temp_holder2)))
+      }
     }
     return(temp_holder2)
 }
@@ -118,9 +112,13 @@ ret_2_12= function (portfolio){ # Defining function
   temp_holder = 0 %>% as.data.frame()
   temp_holder2 = 0 %>% as.data.frame()
   temp_holder3 = 0 %>% as.data.frame()
-  z = 0 %>% as.data.frame()
-    for (i in 1:length(uniq_stocks)){ # for each date we have in the portfolio do this
+  count = 0
+  pb = txtProgressBar(min = 0, max = length(uniq_stocks), initial = 0, style = 3) # progress bar
+   z = 0 %>% as.data.frame()
+  for (i in 1:length(uniq_stocks)){ # for each date we have in the portfolio do this
       z = portfolio %>% filter(uniq_stocks[i] == symbol)
+      count = count + 1 # Adds 1 to the counter for progressbar 
+       setTxtProgressBar(pb,count) # Starting the progress bar
       for(j in 2:12) {
         temp_holder = return_function(z,j)
         name = paste0("ret", sep = "_", j)
@@ -136,31 +134,22 @@ ret_2_12= function (portfolio){ # Defining function
 test  = ret_2_12(df)
 
 df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
+
+test = NULL 
+
+
 ```
 
-```{r} 
-cumalative = function (portfolio, weights){ # Defining function
-reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
-tot_ret = c() # Empthy vector 
-  for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-    if (i == 1){  # First round do this 
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
-    ret = (1+z$return) * (1/nrow(z))  # Investing 1 dollar divided by stocks multiplied with returns
-    tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
-    }
-    if (i > 1){ # When its beyond start date, (t+1). Do the following
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
-    temp = tot_ret / nrow(z) # devide what we earned in the previous period on the numbers of stocks to reinvest  
-    ret = (1+z$return) * temp # multiply the investments dollar from previous step with the returns 
-    tot_ret[i]  = sum(ret) # Sum it all up 
-    }
-  }
-
-
+her skal vi lage en ny kolonne der vi legger til alle returns eller totalt med returns slik at det er mer en 8 som skal til 
+```{r}
+df$available_returns = rowSums(!is.na(df[9:19])) # compute number of available returns
+df$cum_return = rowProds(1+as.matrix(df[9:19]), na.rm=T)
+ 
 ```
 
 ```{r, putting into monthly deciles}
 decile_seperation = function(portfolio){
+  portfolio = portfolio %>% filter(available_returns >= 8) %>% filter(cum_return != Inf)# Above 8 monthly returns in ranking 
   portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
   reb_month =  unique(portfolio$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
@@ -171,8 +160,8 @@ decile_seperation = function(portfolio){
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
       temp_holder = portfolio %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder2 = cut(temp_holder$cum_return, # put it into deciles, based on monthly return
-          quantile(temp_holder$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder2 = cut(temp_holder$return, # put it into dociles, based on monthly return
+          quantile(temp_holder$return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE)
        temp_holder3= add_column(temp_holder ,as.tibble(temp_holder2)) # adds the decile score to the table 
@@ -183,25 +172,23 @@ decile_seperation = function(portfolio){
   return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
 }  
 
+df = as.tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
 
-dfa = as.tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
-
-names(dfa)[names(dfa) == "value"] <- "quantile" # Renames the colume value to quantile.  
+names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quantile.  
 
 ```
 
 
 ```{r, warning = FALSE}
-top = dfa %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
-mid = dfa %>% dplyr::filter(quantile == 5) %>% arrange(date)  # worst performance portfolio based 
-bot = dfa %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
+top = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
+mid = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
+bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
 
 
 ```{r, warning = FALSE}
-
 ###
-### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding 
+### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding EQUALY WEIGHTED
 ###### 
 selecter = c("symbol", "date", "return") # Variables to have in top and bot tibble
 top = dplyr::select(top,all_of(selecter)) # Selects from selecter
@@ -242,6 +229,35 @@ mid_score = total_port_ret(mid) # runs on bot portf.
 bot_score = total_port_ret(bot) # runs on bot portf.
 ```
 
+```{r}
+# Creates monthly value weights per stock 
+v_weights= function (portfolio){ # Defining function
+  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+  temp_holder = 0 %>% as.data.frame()
+  temp_holder2 = 0 %>% as.data.frame()
+  z = 0 
+  count = 0 
+  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
+    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+      z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
+      count = count + 1 # Adds 1 to the counter for progressbar 
+      setTxtProgressBar(pb,count) # Starting the progress bar
+        for (j in 1:10){ 
+          x = z
+          a = x %>% filter(quantile == j)
+          tot_w = sum(a$mcap)  
+          temp_holder = (a$mcap/tot_w) %>% as.data.frame()
+          temp_holder2 = bind_rows(temp_holder,temp_holder2)
+      }
+    }
+  return(temp_holder2)
+}  
+        
+vw  = v_weights(df)
+vw = vw %>% slice(-c(nrow(vw)))
+names(vw)[names(vw) == "."] <- "vw"
+df = cbind(df,vw )
+```
 
 ```{r, warning = FALSE}
 
@@ -413,9 +429,9 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,40,10)) +
+    scale_y_continuous(breaks = seq(0,1000,100)) +
     scale_x_date(date_breaks = '5 year',
-               date_labels = '%Y') +
+               date_labels = '%Y',) +
     scale_color_manual(values = colors)
 
 ```
