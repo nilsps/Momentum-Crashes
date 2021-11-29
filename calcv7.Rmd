@@ -58,7 +58,7 @@ return_calculations = function(portfolio){
   count = 1 # Counter to see time remaining
     for (j in 1:length(reb_stock)){
       temp_holder = portfolio %>% filter(symbol == reb_stock[j])
-      temp_holder$return  = ((temp_holder$close) - lag(temp_holder$close))  / lag(temp_holder$close)
+      temp_holder$return  = ((temp_holder$close - lag(temp_holder$close))  / lag(temp_holder$close))
       temp_holder2 = rbind(temp_holder,temp_holder2) 
       count = count + 1
       vv = setTxtProgressBar(pb,count)
@@ -104,13 +104,19 @@ ret_2_12= function (portfolio){ # Defining function
 }  
 
 test  = ret_2_12(df)
-
 df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
-
 test = NULL 
-
-
 ```
+
+
+```{r}
+library(TTR)
+#eqit = c("A UN Equity", "NVR UN Equity")
+test = df %>% filter(symbol == eqit)
+test$mom12  = momentum(test$return, n=12)
+```
+
+
 
 her skal vi lage en ny kolonne der vi legger til alle returns eller totalt med returns slik at det er mer en 8 som skal til 
 ```{r}
@@ -119,14 +125,8 @@ df = df %>% dplyr::select(-1) # just removing a col that was not supose to be th
 df[sapply(df, is.infinite)] = NA
 df[sapply(df, is.nan)] = NA
 
-
 df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
 df$cum_return = rowProds(1+as.matrix(df[7:17]), na.rm=T)
-
-
-
-
-
 ```
 
 ```{r, putting into monthly deciles}
@@ -134,7 +134,7 @@ df$cum_return = rowProds(1+as.matrix(df[7:17]), na.rm=T)
 
 decile_seperation = function(portfolio){
   portfolio = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
-  portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
+  portfolio$cum_return_norm = portfolio$cum_return / portfolio$available_returns #Normalising 
   reb_month =  unique(portfolio$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
   temp_holder2 = NULL # Empty working var 
@@ -144,8 +144,8 @@ decile_seperation = function(portfolio){
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
       temp_holder = portfolio %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder2 = cut(temp_holder$cum_return, # put it into dociles, based on monthly return
-          quantile(temp_holder$cum_return,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder2 = cut(temp_holder$cum_return_norm, # put it into dociles, based on monthly return
+          quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE)
        temp_holder3= add_column(temp_holder ,as.tibble(temp_holder2)) # adds the decile score to the table 
@@ -206,6 +206,8 @@ top = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best p
 mid = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
 bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
+
+
 
 
 ```{r, warning = FALSE}
