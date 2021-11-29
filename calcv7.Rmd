@@ -114,14 +114,24 @@ test = NULL
 
 her skal vi lage en ny kolonne der vi legger til alle returns eller totalt med returns slik at det er mer en 8 som skal til 
 ```{r}
-df$available_returns = rowSums(!is.na(df[8:18])) # compute number of available returns
-df$cum_return = rowProds(1+as.matrix(df[8:18]), na.rm=T)
- 
+# We can get data that is calculated to inf! this is due to the table sometimes provides us with nothing to calculate to or from \ incase a delesting etc. Therefor we have to convert info to get Zero as a value, if we filter out inf we will remove to many returns! 
+df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
+df[sapply(df, is.infinite)] = NA
+df[sapply(df, is.nan)] = NA
+
+
+df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
+df$cum_return = rowProds(1+as.matrix(df[7:17]), na.rm=T)
+
+
+
+
+
 ```
 
 ```{r, putting into monthly deciles}
 decile_seperation = function(portfolio){
-  portfolio = portfolio %>% filter(available_returns >= 8) %>% filter(cum_return != Inf)# Above 8 monthly returns in ranking 
+  portfolio = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
   portfolio$cum_return = portfolio$cum_return / portfolio$available_returns #Normalising 
   reb_month =  unique(portfolio$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
@@ -172,15 +182,9 @@ v_weights= function (portfolio){ # Defining function
           tot_w = sum(a$mcap)  
           a$vw  = (a$mcap/tot_w) %>% as.data.frame()
           temp_holder = bind_rows(a,temp_holder) 
-          #ret = bind_rows(a,a) 
-          #a$vw  = bind_rows(temp_holder,temp_holder2)
           if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
              temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
              } 
-          # }
-          #if (j == 10){
-            #ret = bind_rows(a,a) 
-        #} 
       }
     }
   return(temp_holder)
@@ -206,7 +210,7 @@ bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance
 
 ```{r, warning = FALSE}
 ###
-### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding EQUALY WEIGHTED
+### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding Value WEIGHTED
 ###### 
 selecter = c("symbol", "date", "return", "value_w") # Variables to have in top and bot tibble
 top = dplyr::select(top,all_of(selecter)) # Selects from selecter
@@ -236,21 +240,12 @@ temp = 0
 return(tot_ret) #returns the calculations out of the loop
 }
 
-test_top= cumalative_ret_portfolio(top)
-
-total_port_ret = function (portfolio){ # Just a filter function to makesure everything has return over 0 
-  portfolio = portfolio %>% filter(return != 0) # Returns can not be zero
-  tot_ret = (cumalative_ret_portfolio(portfolio)) # calls the previous function (We run a function in a function)
-  return(tot_ret) # Returns the total returns 
-} 
-
-
 ##
 ## This section retrives a string of numbers (return per rebalancing period)
 ##
-top_score = total_port_ret(top) # runs the script on top portfolio 
-mid_score = total_port_ret(mid) # runs on bot portf.
-bot_score = total_port_ret(bot) # runs on bot portf.
+top_score = cumalative_ret_portfolio(top) # runs the script on top portfolio 
+mid_score = cumalative_ret_portfolio(mid) # runs on bot portf.
+bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
 ```
 
 
