@@ -13,3 +13,5 @@ connect_postgres.Rmd
 Overview.CSV
 connect_postgres.nb.html
 sp500_df.Rdata
+sp500_data.csv
+All_stocks_us_raw.Rdata
