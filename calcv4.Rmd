@@ -515,4 +515,3 @@ SharpeRatio(df_sharpe_mkt,Rf=mean_rf, FUN="StdDev")
 
 
 
-

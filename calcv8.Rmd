@@ -37,8 +37,8 @@ df$date =  as.Date(df$date, format = '%d.%m.%Y')
 #df = dplyr::filter(df, date > "2002-12-31")
 
 df = df %>% dplyr::filter(date > "2000-01-01")
-#df = df %>% filter(close > 0) 
-#df = df %>% filter(mcap > 0) 
+df = df %>% filter(close > 0) 
+df = df %>% filter(mcap > 0) 
 
 df = df %>% group_by(symbol) %>% arrange(date) 
 
@@ -109,17 +109,6 @@ df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row
 test = NULL 
 ```
 
-
-# ```{r}
-# library(TTR)
-# #eqit = c("A UN Equity", "NVR UN Equity")
-# test = df %>% filter(symbol == eqit)
-# test$mom12  = momentum(test$return, n=12)
-# ```
-
-
-
-her skal vi lage en ny kolonne der vi legger til alle returns eller totalt med returns slik at det er mer en 8 som skal til 
 ```{r}
 # We can get data that is calculated to inf! this is due to the table sometimes provides us with nothing to calculate to or from \ incase a delesting etc. Therefor we have to convert info to get Zero as a value, if we filter out inf we will remove to many returns! 
 df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
@@ -203,11 +192,10 @@ dfx = NULL
 
 
 ```{r, warning = FALSE}
-top = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
-mid = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
-bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
+top_1 = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
+mid_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
+bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
-
 
 
 
@@ -216,9 +204,9 @@ bot = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance
 ### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding Value WEIGHTED
 ###### 
 selecter = c("symbol", "date", "return", "vw") # Variables to have in top and bot tibble
-top = dplyr::select(top,all_of(selecter)) # Selects from selecter
-mid = dplyr::select(mid,all_of(selecter)) # Selects from selecter
-bot = dplyr::select(bot,all_of(selecter)) # Selects from selecter
+top = dplyr::select(top_1,all_of(selecter)) # Selects from selecter
+mid = dplyr::select(mid_1,all_of(selecter)) # Selects from selecter
+bot = dplyr::select(bot_1,all_of(selecter)) # Selects from selecter
 
 portfolio = top
 
@@ -229,12 +217,12 @@ sum_w = 0
 temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
     if (i == 1){  # First round do this 
-      z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
-      ret = (1+z$return) * z$vw * 1  # Investing 1 dollar divided by stocks multiplied with returns
+      z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
+      ret = (1+z$return) * z$vw  # Investing 1 dollar divided by stocks multiplied with returns
       tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
     }
     if (i > 1){ # When its beyond start date, (t+1). Do the following
-      z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
+      z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
       ret = tot_ret[i-1] * z$vw * (1+z$return) #Returns * the weights 
       tot_ret[i]  = sum(ret) # Sum it all up to reinvest 
     }
@@ -250,40 +238,62 @@ mid_score = cumalative_ret_portfolio(mid) # runs on bot portf.
 bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
 ```
 
-
-
-```{r, warning = FALSE}
-
-###
-## DOES INVERSE WHEN SHORTING THE LOOSERS! 
-###
-bot = dplyr::select(bot,all_of(selecter)) # Selects from selecter
-
-inverse_cumalative_ret_portfolio = function (portfolio){ # Defining function
-reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
-tot_ret = c() # Empthy vector 
+```{r}
+#creating wml portfolio
+wml_weights= function (portfolio){ # Defining function
+  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+  temp_holder = 0 %>% as.data.frame()
+  z = 0 
+  count = 0 
+  pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
+    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+      z = portfolio %>% dplyr::filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
+      count = count + 1 # Adds 1 to the counter for progressbar 
+      setTxtProgressBar(pb,count) # Starting the progress bar
+          x = z
+          tot_w = sum(x$mcap)  
+          x$vw  = (x$mcap/tot_w) %>% as.data.frame()
+          temp_holder = bind_rows(x,temp_holder) 
+          if (i == 1) { # This is only here to remoe the one binding col!
+             temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
+             } 
+        }
+      return(temp_holder)
+    }
+  
+wml_cumalative_ret_portfolio = function (port){ # Defining function
+reb_month =  unique(port$date) # finds each re-balancing months from the portfolio
+tot_ret = c() # empty vector 
+sum_w = 0
+temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
     if (i == 1){  # First round do this 
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
-    ret = ((1+((-1)*z$return)) * z$vw) * 1  # Investing 1 dollar divided by stocks multiplied with returns
-    tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
+      z = port %>% dplyr::filter(reb_month[i] == port$date) # Select the first date on the list, filter out the rest 
+      #z = z %>% dplyr::filter(ret_inv != 0) 
+      ret = (1+z$ret_inv) * z$vw  # Investing 1 dollar divided by stocks multiplied with returns
+      tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
     }
     if (i > 1){ # When its beyond start date, (t+1). Do the following
-    z = portfolio %>% filter(reb_month[i] == portfolio$date) # Filter out the dates not needed
-    ret = ((1+(-1)*z$return ) * z$vw) * tot_ret[i-1]  # multiply the investments dollar from previous step with the returns 
-    tot_ret[i]  = sum(ret) # Sum it all up 
+      z = port %>% dplyr::filter(reb_month[i] == port$date) # Filter out the dates not needed
+      tot_w = sum(z$vw)
+      ret = (tot_ret[i-1]/tot_w)* z$vw * (1+z$ret_inv) #Returns * the weights 
+      tot_ret[i]  = sum(ret) # Sum it all up to reinvest 
     }
   }
 return(tot_ret) #returns the calculations out of the loop
 }
 
+bot_1$ret_inv = bot$return * -1   # Inverting returns 
+top_1$ret_inv = top$return        # just adding the same on top for easier merging
+wml_score = rbind(top_1,bot_1)    # Binding the to together 
 
-##
-## This section retrives a string of numbers (return per rebalancing period)
-##
-bot_score_inverse = inverse_cumalative_ret_portfolio(bot) # runs on bot portf.
+wml_score_parent  = wml_weights(wml_score) # finding weights for wml
+wml_score = wml_cumalative_ret_portfolio(wml_score_parent)
+
+dfx = wml_score_parent %>% dplyr::filter(date == "2010-12-31") # Checking that weights sum to one 
+sum(dfx$vw) # OK if it sums to one
+# dfx = NULL
 ```
-
 
 ```{r}
 ##
@@ -298,10 +308,12 @@ scores = function (portfolio, parent_portfolio){ # makes function
 
 } 
 
+wml_score_parent = wml_score_parent %>% dplyr::select(all_of(selecter))
+
 top_score_reb = scores(top_score, top) #Calls the function on the score and the parrent 
 mid_score_reb = scores(mid_score, mid) # same but for mid score 
 bot_score_reb = scores(bot_score, bot) # same but for bot score  bot_score_inverse
-bot_score_reb_inverse = scores(bot_score_inverse, bot)
+wml_score_reb = scores(wml_score, wml_score_parent)
 ```
 
 ```{r, warning = FALSE}
@@ -312,7 +324,7 @@ total_table = function(){
     total_score$top = top_score_reb$cum_rets
     total_score$mid = mid_score_reb$cum_rets
     total_score$bot = bot_score_reb$cum_rets
-    total_score$bot_inverse = bot_score_reb_inverse$cum_rets
+    total_score$wml = wml_score_reb$cum_rets
   return(total_score)
   }
 }
@@ -368,18 +380,6 @@ total_score$date = total_score$date %>% as.Date()
 ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
   
 total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
-```
-
-
-```{r}
-# Goal calculate WML portfolio 
-# 
-
-wml = function (total_score){
-  wml = total_score$top - total_score$bot_inverse #+ total_score$ff_rf    
-}
-
-total_score$wml  = wml (total_score) 
 ```
 
 ```{r}
