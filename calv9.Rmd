@@ -1,24 +1,56 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+---
+title: "R Notebook"
+output: html_notebook
+---
 
 ```{r}
-library(dplyr)
 library(tidyquant)
 library(tidyverse)
+library(dplyr)
 library(plyr)
 library(bsts)
-
+library(matrixStats)
+library(readr)
+library(TTR)
 ```
 
 ```{r}
-library(readr)
-df = read_csv2("sp500.csv",col_names = TRUE, col_types = cols(`date` = col_character(), 
-        `mcap` = col_number(), `close` = col_number(), 
-        `tot_ret` = col_number()))
+tot_df_db <- read_csv("tot_df_db.csv", col_types = cols(date = col_date(format = "%Y-%m-%d")))
 
-names(df)[2]  = "symbol"
+df = tot_df_db
+
+tot_df_db = NULL
+
+names(df)[1]  = "symbol"
+names(df)[2] = "date" 
+
+df$date = df$date %>% as.Date() 
+month_day = LastDayInMonth(df$date) %>% as.Date()
+
+df = dplyr::filter(df, date == month_day) 
 
 df[is.na(df)] = 0
 
-devtools::unload("readr")
+#df = df %>% dplyr::filter(adjusted > 0) # DF needs positiv sales prices, 
+df = df %>% dplyr::filter(close > 0) # Same as above 
+
+df = dplyr::select(df, symbol, date, close) # Select the cols we need for the research
+
+#Sticking with relativly "fresh" stocks, as older periods often have alot of NAs and holes in them.
+df = df %>% dplyr::filter(date > "1980-01-01") 
+
+# These stocks are removed due to wierd data. in total_df
+unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
+  
+df = dplyr::filter(df, !symbol %in% unwanted)
+
+#sp500_df = NULL
+
+unwanted = NULL
 ```
 
 ```{r}
@@ -29,8 +61,9 @@ df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
 #df = dplyr::filter(df, date > "2002-12-31")
 
-df = df %>% dplyr::filter(date > "2000-01-01")
-df = df %>% dplyr::filter(close != 0) %>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
+df = df %>% dplyr::filter(date > "1980-01-01")
+df = df %>% dplyr::filter(close != 0) 
+#df = df %>% filter(mcap > 0) 
 
 df = df %>% group_by(symbol) %>% arrange(date) 
 
@@ -49,7 +82,7 @@ return_calculations = function(portfolio){
   pb = txtProgressBar(min = 0, max = length(reb_stock), initial = 0, style = 3) # Progressbar 
   count = 1 # Counter to see time remaining
     for (j in 1:length(reb_stock)){
-      temp_holder = portfolio %>% dplyr::filter(symbol == reb_stock[j])
+      temp_holder = portfolio %>% filter(symbol == reb_stock[j])
       temp_holder$return  = ((lead(temp_holder$close) - temp_holder$close)  / temp_holder$close)
       temp_holder2 = rbind(temp_holder,temp_holder2) 
       count = count + 1
@@ -60,14 +93,12 @@ return_calculations = function(portfolio){
 
 
 df = return_calculations(df)
-df = df %>% dplyr::filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
+df = df %>% filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
 
 
 ```
 
 ```{r}
-# This creates 12 cols, these cols will tell you if you sold it today, what will be the return 
-
 return_function = function(portfolio,period){
   x = ((portfolio$close - lag(portfolio$close, n = period))  / lag(portfolio$close, n = period))
   return(x)
@@ -82,7 +113,7 @@ mom_2_12= function (portfolio){ # Defining function
   pb = txtProgressBar(min = 0, max = length(uniq_stocks), initial = 0, style = 3) # progress bar
    z = 0 %>% as.data.frame()
   for (i in 1:length(uniq_stocks)){ # for each date we have in the portfolio do this
-      z = portfolio %>% dplyr::filter(uniq_stocks[i] == symbol)
+      z = portfolio %>% filter(uniq_stocks[i] == symbol)
       count = count + 1 # Adds 1 to the counter for progressbar 
        setTxtProgressBar(pb,count) # Starting the progress bar
       for(j in 2:12) {
@@ -105,31 +136,19 @@ test = NULL
 
 ```{r}
 # We can get data that is calculated to inf! this is due to the table sometimes provides us with nothing to calculate to or from \ incase a delesting etc. Therefor we have to convert info to get Zero as a value, if we filter out inf we will remove to many returns! 
-#df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
-library(matrixStats)
+df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
+df[sapply(df, is.infinite)] = NA
+df[sapply(df, is.nan)] = NA
 
-table_scrubber = function() {
-  df[7:17] = na_if(df[7:17], 0)
-  df[sapply(df, is.infinite)] = NA
-  df[sapply(df, is.nan)] = NA
-}
-
-#df[df[7:17] == 0] = NA
-table_scrubber()
 df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
-
 df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T)
-table_scrubber()
-
-
-devtools::unload("matrixStats")
 ```
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking 
+  x = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
   x$cum_return_norm = x$cum_return / x$available_returns #Normalising 
   reb_month =  unique(x$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
@@ -139,9 +158,9 @@ decile_seperation = function(portfolio){
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
-      temp_holder = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
+      temp_holder = x %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
       temp_holder2 = cut(temp_holder$cum_return_norm, # put it into dociles, based on monthly return
-          quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/5),na.rm =T),
+          quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE)
        temp_holder3= add_column(temp_holder ,as_tibble(temp_holder2)) # adds the decile score to the table 
@@ -160,6 +179,7 @@ names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quan
 
 ```{r}
 # Creates monthly value weights per stock 
+
 v_weights= function (portfolio){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   temp_holder = 0 %>% as.data.frame()
@@ -167,14 +187,14 @@ v_weights= function (portfolio){ # Defining function
   count = 0 
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-      z = portfolio %>% dplyr::filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
+      z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
       count = count + 1 # Adds 1 to the counter for progressbar 
       setTxtProgressBar(pb,count) # Starting the progress bar
-        for (j in 1:5){ 
+        for (j in 1:10){ 
           x = z
-          a = x %>% dplyr::filter(quantile == j)
-          tot_w = sum(a$mcap)  
-          a$vw  = (a$mcap/tot_w) %>% as.data.frame()
+          a = x %>% filter(quantile == j)
+          tot_w = length(unique(a$symbol))
+          a$vw  = 1 / tot_w
           temp_holder = bind_rows(a,temp_holder) 
           if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
              temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
@@ -190,15 +210,15 @@ df = df %>% slice(-c(ncol(df)))
 
 #names(df)[ncol(df)] = 'value_w'
 
-dfx = df %>% filter(quantile == 1) %>% filter(date == "2008-12-31") # Checking that weights sum to one 
+dfx = df %>% filter(quantile == 1) %>% filter(date == "2010-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
 ```
 
 
 ```{r, warning = FALSE}
-top_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date) # making the best performance portf
-mid_1 = df %>% dplyr::filter(quantile == 3) %>% arrange(date)  # med performance portfolio based 
+top_1 = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
+mid_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
 bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
 
@@ -256,8 +276,8 @@ wml_weights= function (portfolio){ # Defining function
       count = count + 1 # Adds 1 to the counter for progressbar 
       setTxtProgressBar(pb,count) # Starting the progress bar
           x = z
-          tot_w = sum(x$mcap)  
-          x$vw  = (x$mcap/tot_w) %>% as.data.frame()
+          tot_w = length(unique(z$symbol)) 
+          x$vw  = (1/tot_w) %>% as.data.frame()
           temp_holder = bind_rows(x,temp_holder) 
           if (i == 1) { # This is only here to remoe the one binding col!
              temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
@@ -538,7 +558,4 @@ plot(ts_df^2)
 
 garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
 summary(garch_df)
-
-devtools::unload("fGarch")
 ```
-
