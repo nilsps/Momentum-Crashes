@@ -26,7 +26,7 @@ devtools::unload("readr")
 ##
 df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
-df = dplyr::filter(df, date > "1990-12-31")
+df = dplyr::filter(df, date > "2005-12-31")
 
 df = df %>% dplyr::filter(close != 0) %>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
 
@@ -117,7 +117,8 @@ table_scrubber()
 df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
 
 df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T) %>% log()
-table_scrubber()
+
+table_scrubber() # Just makeing sure my data is nice and shiny 
 
 devtools::unload("matrixStats")
 ```
@@ -128,41 +129,42 @@ devtools::unload("matrixStats")
 # Our data set goes from -1 to 1 
 
 df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns devided on number on total number of rets
-
+df = df %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
 x = df$cum_return_norm 
-df$norm_norm_cret = normalized = (x-min(x))/(max(x)-min(x))
+df$norm_norm_cret = (x-min(x))/(max(x)-min(x))
 ```
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
-portfolio = df
-j = 1
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
-  x = x %>% dplyr::distinct(norm_norm_cret, .keep_all = T)
+  x = portfolio %>% dplyr::distinct(norm_norm_cret, .keep_all = T)
   reb_month =  unique(x$date) # Finding all unique dates 
   temp_holder1 = NULL
   temp_holder2 = NULL # Empty working var 
+  temp_holder3 = NULL # Empty working var 
+  temp_holder4 = NULL # Empty working var
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
       temp_holder1 = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder1$quantile = cut(temp_holder1$norm_norm_cret, # put it into dociles, based on monthly return
-          quantile((1+temp_holder1$norm_norm_cret),probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder2$quantile = cut(temp_holder1$norm_norm_cret, # put it into dociles, based on monthly return
+          quantile((temp_holder1$norm_norm_cret),probs=seq(from=0,to=1,by=1/10),na.rm =T),
           #quantile((normalized_cumalative),probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
           labels=FALSE) # %>% as.list() %>% as.integer()
-       temp_holder2= bind_rows(temp_holder1 ,temp_holder2)  # Binds the score and the folder for a stock and date
+       temp_holder3= add_column(temp_holder1 ,as_tibble(temp_holder2)) # adds the decile score to the table 
+       temp_holder4= bind_rows(temp_holder3 ,temp_holder4)  # Binds the score and the folder for a stock and date
        count = count + 1 # Adds 1 to the counter for progressbar 
        setTxtProgressBar(pb,count) # Starting the progress bar
     }  
-  return(temp_holder2) # Returns from function a entire dataset with quantiles attached.
+  return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
 }
 
 df = as_tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
 
 names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quantile.  
+
 ```
 
 ```{r}
@@ -412,7 +414,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,100,10)) +
+    scale_y_continuous(breaks = seq(0,10,1)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y',) +
     scale_color_manual(values = colors)
@@ -555,12 +557,12 @@ pacf(ts_df)
 Lambda = BoxCox.lambda(ts_df)
 #auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
 
-garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
+#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
 #garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
-summary(garch_df)
-plot((garch.fit))
+#summary(garch_df)
+#plot((garch.fit))
 
-garch.fit@residuals%>% plot(type = "l")
+#garch.fit@residuals%>% plot(type = "l")
 #devtools::unload("forecast")
 #devtools::unload("fGarch")
 #devtools::unload("aTSA")
