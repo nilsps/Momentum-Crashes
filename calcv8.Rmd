@@ -432,7 +432,7 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 ```{r}
 
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "pink", " ff_rf" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
