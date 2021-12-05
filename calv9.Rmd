@@ -82,7 +82,7 @@ return_calculations = function(portfolio){
   pb = txtProgressBar(min = 0, max = length(reb_stock), initial = 0, style = 3) # Progressbar 
   count = 1 # Counter to see time remaining
     for (j in 1:length(reb_stock)){
-      temp_holder = portfolio %>% filter(symbol == reb_stock[j])
+      temp_holder = portfolio %>% dplyr::filter(symbol == reb_stock[j])
       temp_holder$return  = ((lead(temp_holder$close) - temp_holder$close)  / temp_holder$close)
       temp_holder2 = rbind(temp_holder,temp_holder2) 
       count = count + 1
@@ -93,7 +93,7 @@ return_calculations = function(portfolio){
 
 
 df = return_calculations(df)
-df = df %>% filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
+df = df %>% dplyr::filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
 
 
 ```
@@ -113,7 +113,7 @@ mom_2_12= function (portfolio){ # Defining function
   pb = txtProgressBar(min = 0, max = length(uniq_stocks), initial = 0, style = 3) # progress bar
    z = 0 %>% as.data.frame()
   for (i in 1:length(uniq_stocks)){ # for each date we have in the portfolio do this
-      z = portfolio %>% filter(uniq_stocks[i] == symbol)
+      z = portfolio %>% dplyr::filter(uniq_stocks[i] == symbol)
       count = count + 1 # Adds 1 to the counter for progressbar 
        setTxtProgressBar(pb,count) # Starting the progress bar
       for(j in 2:12) {
@@ -140,15 +140,15 @@ df = df %>% dplyr::select(-1) # just removing a col that was not supose to be th
 df[sapply(df, is.infinite)] = NA
 df[sapply(df, is.nan)] = NA
 
-df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
-df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T)
+df$available_returns = rowSums(!is.na(df[5:15])) # compute number of available returns
+df$cum_return = matrixStats::rowProds(1+as.matrix(df[5:15]), na.rm=T)
 ```
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% filter(available_returns >= 8) # Above 8 monthly returns in ranking 
+  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking 
   x$cum_return_norm = x$cum_return / x$available_returns #Normalising 
   reb_month =  unique(x$date) # Finding all unique dates 
   temp_holder = NULL # Empty working var
@@ -158,7 +158,7 @@ decile_seperation = function(portfolio){
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
-      temp_holder = x %>% filter(date == reb_month[j]) # filter each dates so we have one specific month
+      temp_holder = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
       temp_holder2 = cut(temp_holder$cum_return_norm, # put it into dociles, based on monthly return
           quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
@@ -171,7 +171,7 @@ decile_seperation = function(portfolio){
   return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
 }  
 
-df = as_tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
+df = decile_seperation(df) %>% as_tibble() # calls the function on tibble df, and saves as dfa  
 
 names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quantile.  
 
@@ -179,6 +179,8 @@ names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quan
 
 ```{r}
 # Creates monthly value weights per stock 
+#                        DOES EQUALY WEIGHTED PORTFOLIO
+###################################################################
 
 v_weights= function (portfolio){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
@@ -187,18 +189,18 @@ v_weights= function (portfolio){ # Defining function
   count = 0 
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-      z = portfolio %>% filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
+      z = portfolio %>% dplyr::filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
       count = count + 1 # Adds 1 to the counter for progressbar 
       setTxtProgressBar(pb,count) # Starting the progress bar
         for (j in 1:10){ 
           x = z
-          a = x %>% filter(quantile == j)
+          a = x %>% dplyr::filter(quantile == j)
           tot_w = length(unique(a$symbol))
           a$vw  = 1 / tot_w
           temp_holder = bind_rows(a,temp_holder) 
           if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
              temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
-             } 
+             } top
         }
       
     }
@@ -210,7 +212,7 @@ df = df %>% slice(-c(ncol(df)))
 
 #names(df)[ncol(df)] = 'value_w'
 
-dfx = df %>% filter(quantile == 1) %>% filter(date == "2010-12-31") # Checking that weights sum to one 
+dfx = df %>% filter(quantile == 1) %>% dplyr::filter(date == "2010-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
 ```

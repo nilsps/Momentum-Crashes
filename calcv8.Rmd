@@ -4,12 +4,11 @@ library(dplyr)
 library(tidyquant)
 library(tidyverse)
 library(plyr)
-library(bsts)
-
 ```
 
 ```{r}
 library(readr)
+
 df = read_csv2("sp500.csv",col_names = TRUE, col_types = cols(`date` = col_character(), 
         `mcap` = col_number(), `close` = col_number(), 
         `tot_ret` = col_number()))
@@ -23,13 +22,12 @@ devtools::unload("readr")
 
 ```{r}
 ##
-## CREATING A MONTHLY DATASET ! 
+## Cleaning some data, removing some dates
 ##
 df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
-#df = dplyr::filter(df, date > "2002-12-31")
+df = dplyr::filter(df, date > "1990-12-31")
 
-df = df %>% dplyr::filter(date > "2000-01-01")
 df = df %>% dplyr::filter(close != 0) %>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
 
 df = df %>% group_by(symbol) %>% arrange(date) 
@@ -118,44 +116,53 @@ table_scrubber = function() {
 table_scrubber()
 df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
 
-df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T)
+df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T) %>% log()
 table_scrubber()
-
 
 devtools::unload("matrixStats")
 ```
 
+
+```{r}
+# Before we input it into quantiles we have to normalize our data, as it can only recive 0 and 1. 
+# Our data set goes from -1 to 1 
+
+df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns devided on number on total number of rets
+
+x = df$cum_return_norm 
+df$norm_norm_cret = normalized = (x-min(x))/(max(x)-min(x))
+```
+
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
+portfolio = df
+j = 1
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking 
-  x$cum_return_norm = x$cum_return / x$available_returns #Normalising 
+  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
+  x = x %>% dplyr::distinct(norm_norm_cret, .keep_all = T)
   reb_month =  unique(x$date) # Finding all unique dates 
-  temp_holder = NULL # Empty working var
+  temp_holder1 = NULL
   temp_holder2 = NULL # Empty working var 
-  temp_holder3 = NULL # Empty working var 
-  temp_holder4 = NULL # Empty working var
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
-      temp_holder = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder2 = cut(temp_holder$cum_return_norm, # put it into dociles, based on monthly return
-          quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/5),na.rm =T),
+      temp_holder1 = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
+      temp_holder1$quantile = cut(temp_holder1$norm_norm_cret, # put it into dociles, based on monthly return
+          quantile((1+temp_holder1$norm_norm_cret),probs=seq(from=0,to=1,by=1/10),na.rm =T),
+          #quantile((normalized_cumalative),probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
-          labels=FALSE)
-       temp_holder3= add_column(temp_holder ,as_tibble(temp_holder2)) # adds the decile score to the table 
-       temp_holder4= bind_rows(temp_holder3 ,temp_holder4)  # Binds the score and the folder for a stock and date
+          labels=FALSE) # %>% as.list() %>% as.integer()
+       temp_holder2= bind_rows(temp_holder1 ,temp_holder2)  # Binds the score and the folder for a stock and date
        count = count + 1 # Adds 1 to the counter for progressbar 
        setTxtProgressBar(pb,count) # Starting the progress bar
     }  
-  return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
-}  
+  return(temp_holder2) # Returns from function a entire dataset with quantiles attached.
+}
 
 df = as_tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
 
 names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quantile.  
-
 ```
 
 ```{r}
@@ -170,7 +177,7 @@ v_weights= function (portfolio){ # Defining function
       z = portfolio %>% dplyr::filter(reb_month[i] == date) # Select the first date on the list, filter out the rest
       count = count + 1 # Adds 1 to the counter for progressbar 
       setTxtProgressBar(pb,count) # Starting the progress bar
-        for (j in 1:5){ 
+        for (j in 1:10){ 
           x = z
           a = x %>% dplyr::filter(quantile == j)
           tot_w = sum(a$mcap)  
@@ -197,8 +204,8 @@ dfx = NULL
 
 
 ```{r, warning = FALSE}
-top_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date) # making the best performance portf
-mid_1 = df %>% dplyr::filter(quantile == 3) %>% arrange(date)  # med performance portfolio based 
+top_1 = df %>% dplyr::filter(quantile == 10) %>% arrange(date) # making the best performance portf
+mid_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance portfolio based 
 bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
 
@@ -245,6 +252,8 @@ bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
 
 ```{r}
 #creating wml portfolio
+
+### NEEDS REWORK BECOUSE OF NORM NORM
 wml_weights= function (portfolio){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   temp_holder = 0 %>% as.data.frame()
@@ -348,7 +357,7 @@ total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 
 ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
 ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
-ff_data = ff_data %>% dplyr::filter(date > "2000-09-01")  # Filter out everydate below 2000-09-01
+ff_data = ff_data %>% dplyr::filter(date > "1980-09-01")  # Filter out everydate below 2000-09-01
 
 day(ff_data$date) = days_in_month(ff_data$date) # Changing the day in our dataset to match the other data (ie last day of month)
 ff_data$date = ff_data$date  %>% as.Date()
@@ -403,7 +412,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_y_continuous(breaks = seq(0,100,10)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y',) +
     scale_color_manual(values = colors)
@@ -461,6 +470,7 @@ ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),col
   xlab("Date")+
   ylab("Alpha")
 ```
+
 ```{r}
 mean(total_score$alpha)
 count(total_score$alpha > 0)
@@ -523,6 +533,8 @@ df_sharpe_mkt = total_score[,c("date","ff_mkt_rf")]
 
 ```{r, warning = FALSE}
 library(fGarch)
+library(aTSA)
+library(forecast)
 
 # Is this Weights ??? What are these things?? 
 
@@ -531,14 +543,77 @@ ts_test = df %>% dplyr::filter(quantile == 10)
 # ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
 # plot(ts_df^2)
 
-ts_df = ts(log(ts_test$return+1), start = c(2000, 10), freq = 12)
+ts_df = ts(log(ts_test$return+1), start = c(1990, 10), freq = 12)
 plot(ts_df)
 plot(ts_df^2)
 
+acf(ts_df, lag.max=30)
+adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
+pacf(ts_df)
 
-garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
+
+Lambda = BoxCox.lambda(ts_df)
+#auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
+
+garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
+#garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
 summary(garch_df)
+plot((garch.fit))
 
-devtools::unload("fGarch")
+garch.fit@residuals%>% plot(type = "l")
+#devtools::unload("forecast")
+#devtools::unload("fGarch")
+#devtools::unload("aTSA")
 ```
+```{r}
+ts_garch = ts_df %>% as.data.frame()
+# ts_garch = df %>% dplyr::filter(quantile == 10)
+ts_garch = cbind(ts_test, ts_garch)
+
+```
+
+
+Need to make a new col wit residuals
+```{r}
+library(fGarch)
+library(aTSA)
+library(forecast)
+
+# Is this Weights ??? What are these things?? 
+
+ts_totscore = total_score$top
+
+# ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
+# plot(ts_df^2)
+
+ts_df = ts(log(ts_totscore$top), start = c(1991, 10), freq = 12)
+plot(ts_df)
+plot(ts_df^2)
+
+acf(ts_df, lag.max=30)
+adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
+pacf(ts_df)
+
+
+Lambda = BoxCox.lambda(ts_df)
+#auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
+
+garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
+#garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
+summary(garch_df)
+plot((garch.fit))
+
+garch.fit@residuals%>% plot(type = "l")
+#devtools::unload("forecast")
+#devtools::unload("fGarch")
+#devtools::unload("aTSA")
+```
+```{r}
+ts_garch = ts_df %>% as.data.frame()
+# ts_garch = df %>% dplyr::filter(quantile == 10)
+ts_garch = cbind(ts_test, ts_garch)
+
+```
+```
+
 
