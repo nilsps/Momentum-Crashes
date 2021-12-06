@@ -129,7 +129,7 @@ devtools::unload("matrixStats")
 # Our data set goes from -1 to 1 
 
 df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns devided on number on total number of rets
-df = df %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
+df = df %>% dplyr::filter(available_returns >= 8) %>% dplyr::filter(return != 0)# Above 8 monthly returns in ranking
 x = df$cum_return_norm 
 df$norm_norm_cret = (x-min(x))/(max(x)-min(x))
 ```
@@ -199,7 +199,7 @@ df = df %>% slice(-c(ncol(df)))
 
 #names(df)[ncol(df)] = 'value_w'
 
-dfx = df %>% filter(quantile == 1) %>% filter(date == "2008-12-31") # Checking that weights sum to one 
+dfx = df %>% filter(quantile == 1) %>% dplyr::filter(date == "2008-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
 ```
@@ -410,7 +410,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
       #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
-       geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) + 
+       #geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) +  # NOT CUMULATIVE
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
@@ -432,12 +432,13 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 ```{r}
 
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "pink", " ff_rf" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = mid, color = "mid"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
        geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
        labs(x = 'Date',
@@ -614,8 +615,6 @@ garch.fit@residuals%>% plot(type = "l")
 ts_garch = ts_df %>% as.data.frame()
 # ts_garch = df %>% dplyr::filter(quantile == 10)
 ts_garch = cbind(ts_test, ts_garch)
-
-```
 ```
 
 

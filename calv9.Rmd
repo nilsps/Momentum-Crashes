@@ -8,17 +8,15 @@ output: html_notebook
 ---
 
 ```{r}
+library(dplyr)
 library(tidyquant)
 library(tidyverse)
-library(dplyr)
 library(plyr)
-library(bsts)
-library(matrixStats)
-library(readr)
-library(TTR)
 ```
 
 ```{r}
+library(bsts)
+
 tot_df_db <- read_csv("tot_df_db.csv", col_types = cols(date = col_date(format = "%Y-%m-%d")))
 
 df = tot_df_db
@@ -36,12 +34,12 @@ df = dplyr::filter(df, date == month_day)
 df[is.na(df)] = 0
 
 #df = df %>% dplyr::filter(adjusted > 0) # DF needs positiv sales prices, 
-df = df %>% dplyr::filter(close > 0) # Same as above 
+df = df %>% dplyr::filter(close != 0) # Same as above 
 
-df = dplyr::select(df, symbol, date, close) # Select the cols we need for the research
+df = df %>% dplyr::select("symbol", "date", "close") # Select the cols we need for the research
 
 #Sticking with relativly "fresh" stocks, as older periods often have alot of NAs and holes in them.
-df = df %>% dplyr::filter(date > "1980-01-01") 
+df = df %>% dplyr::filter(date > "2005-01-01") 
 
 # These stocks are removed due to wierd data. in total_df
 unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
@@ -50,7 +48,9 @@ df = dplyr::filter(df, !symbol %in% unwanted)
 
 #sp500_df = NULL
 
+devtools::unload("bsts")
 unwanted = NULL
+month_day = NULL
 ```
 
 ```{r}
@@ -61,7 +61,7 @@ df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
 #df = dplyr::filter(df, date > "2002-12-31")
 
-df = df %>% dplyr::filter(date > "1980-01-01")
+#df = df %>% dplyr::filter(date > "1980-01-01")
 df = df %>% dplyr::filter(close != 0) 
 #df = df %>% filter(mcap > 0) 
 
@@ -99,6 +99,8 @@ df = df %>% dplyr::filter(date < "2021-10-01") # Last calculations does not have
 ```
 
 ```{r}
+# This creates 12 cols, these cols will tell you if you sold it today, what will be the return 
+
 return_function = function(portfolio,period){
   x = ((portfolio$close - lag(portfolio$close, n = period))  / lag(portfolio$close, n = period))
   return(x)
@@ -131,54 +133,83 @@ mom_2_12= function (portfolio){ # Defining function
 
 test  = mom_2_12(df)
 df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
+
+#df_save = df
 test = NULL 
 ```
 
 ```{r}
 # We can get data that is calculated to inf! this is due to the table sometimes provides us with nothing to calculate to or from \ incase a delesting etc. Therefor we have to convert info to get Zero as a value, if we filter out inf we will remove to many returns! 
-df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
-df[sapply(df, is.infinite)] = NA
-df[sapply(df, is.nan)] = NA
+#df = df %>% dplyr::select(-1) # just removing a col that was not supose to be there (NB! HARD CODED )
+library(matrixStats)
 
-df$available_returns = rowSums(!is.na(df[5:15])) # compute number of available returns
-df$cum_return = matrixStats::rowProds(1+as.matrix(df[5:15]), na.rm=T)
+table_scrubber = function() {
+  df[6:16] = na_if(df[6:16], 0)
+  df[sapply(df, is.infinite)] = NA
+  df[sapply(df, is.nan)] = NA
+}
+
+#df[df[7:17] == 0] = NA
+table_scrubber()
+df$available_returns = rowSums(!is.na(df[6:16])) # compute number of available returns
+
+df$cum_return = matrixStats::rowProds(1+as.matrix(df[6:16]), na.rm=T) %>% log()
+
+table_scrubber() # Just makeing sure my data is nice and shiny 
+
+devtools::unload("matrixStats")
 ```
+
+```{r}
+# Before we input it into quantiles we have to normalize our data, as it can only recive 0 and 1. 
+# Our data set goes from -1 to 1 
+
+df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns by devided on number on total number of rets
+df = df %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
+x = df$cum_return_norm 
+df$norm_norm_cret = (x-min(x))/(max(x)-min(x))
+
+x = NULL
+```
+
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking 
-  x$cum_return_norm = x$cum_return / x$available_returns #Normalising 
+  x = portfolio %>% dplyr::distinct(norm_norm_cret, .keep_all = T)
   reb_month =  unique(x$date) # Finding all unique dates 
-  temp_holder = NULL # Empty working var
+  temp_holder1 = NULL
   temp_holder2 = NULL # Empty working var 
   temp_holder3 = NULL # Empty working var 
   temp_holder4 = NULL # Empty working var
   pb = txtProgressBar(min = 0, max = length(reb_month), initial = 0, style = 3) # progress bar
   count = 1 #counter for usage in progress bar
     for (j in 1:length(reb_month)){ # Takes all months with the mentioned criteria above.
-      temp_holder = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
-      temp_holder2 = cut(temp_holder$cum_return_norm, # put it into dociles, based on monthly return
-          quantile(temp_holder$cum_return_norm,probs=seq(from=0,to=1,by=1/10),na.rm =T),
+      temp_holder1 = x %>% dplyr::filter(date == reb_month[j]) # filter each dates so we have one specific month
+      temp_holder2$quantile = cut(temp_holder1$norm_norm_cret, # put it into dociles, based on monthly return
+          quantile((temp_holder1$norm_norm_cret),probs=seq(from=0,to=1,by=1/10),na.rm =T),
+          #quantile((normalized_cumalative),probs=seq(from=0,to=1,by=1/10),na.rm =T),
           include.lowest=TRUE, 
-          labels=FALSE)
-       temp_holder3= add_column(temp_holder ,as_tibble(temp_holder2)) # adds the decile score to the table 
+          labels=FALSE) # %>% as.list() %>% as.integer()
+       temp_holder3= add_column(temp_holder1 ,as_tibble(temp_holder2)) # adds the decile score to the table 
        temp_holder4= bind_rows(temp_holder3 ,temp_holder4)  # Binds the score and the folder for a stock and date
        count = count + 1 # Adds 1 to the counter for progressbar 
        setTxtProgressBar(pb,count) # Starting the progress bar
     }  
   return(temp_holder4) # Returns from function a entire dataset with quantiles attached.
-}  
+}
 
-df = decile_seperation(df) %>% as_tibble() # calls the function on tibble df, and saves as dfa  
+df = as_tibble(decile_seperation(df)) # calls the function on tibble df, and saves as dfa  
 
 names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quantile.  
 
 ```
 
+
+
 ```{r}
-# Creates monthly value weights per stock 
+#
 #                        DOES EQUALY WEIGHTED PORTFOLIO
 ###################################################################
 
@@ -199,8 +230,8 @@ v_weights= function (portfolio){ # Defining function
           a$vw  = 1 / tot_w
           temp_holder = bind_rows(a,temp_holder) 
           if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
-             temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
-             } top
+             temp_holder = temp_holder %>% dplyr::slice(-c(nrow(temp_holder)))
+             }
         }
       
     }
@@ -215,6 +246,8 @@ df = df %>% slice(-c(ncol(df)))
 dfx = df %>% filter(quantile == 1) %>% dplyr::filter(date == "2010-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
+
+df_save2 = df
 ```
 
 
@@ -235,15 +268,13 @@ top = dplyr::select(top_1,all_of(selecter)) # Selects from selecter
 mid = dplyr::select(mid_1,all_of(selecter)) # Selects from selecter
 bot = dplyr::select(bot_1,all_of(selecter)) # Selects from selecter
 
-portfolio = top
-
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
 tot_ret = c() # empty vector 
 sum_w = 0
 temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-    if (i == 1){  # First round do this 
+    if (i == 1){  # First month do this 
       z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
       ret = (1+z$return) * z$vw  # Investing 1 dollar divided by stocks multiplied with returns
       tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
@@ -370,7 +401,7 @@ total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 
 ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
 ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
-ff_data = ff_data %>% dplyr::filter(date > "2000-09-01")  # Filter out everydate below 2000-09-01
+ff_data = ff_data %>% dplyr::filter(date > "1980-09-01")  # Filter out everydate below 2000-09-01
 
 day(ff_data$date) = days_in_month(ff_data$date) # Changing the day in our dataset to match the other data (ie last day of month)
 ff_data$date = ff_data$date  %>% as.Date()
