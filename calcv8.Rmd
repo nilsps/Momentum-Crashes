@@ -42,7 +42,6 @@ transform(df, date = bsts::LastDayInMonth(df$date))
 
 df = df %>% group_by(symbol) %>% arrange(date) 
 
-
 #devtools::unload("bsts")
 ```
 
@@ -229,6 +228,7 @@ bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performan
 ## CREATING A MONTHLY DATASET for SP500!
 ##
 library(bsts)
+library(openair)
 
 from = today() - years(40)
 
@@ -240,14 +240,7 @@ sp500$date =  as.Date(sp500$date, format = '%Y-%m-%d')
 
 sp500 = dplyr::filter(sp500, date > portstart_date)
 
-month_day = LastDayInMonth(sp500$date) %>% as.Date()
-
-month_day = month_day %>% unique()
- # This is due to extreme amounts of NAs in 1970s-1960 to get a better dataset. 
-
-sp500 = dplyr::filter(sp500, date == month_day) #Filters out all other dates for the month except last one
-
-transform(sp500, date = bsts::LastDayInMonth(sp500$date))
+month_day = LastDayInMonth(sp500$date) %>% unique() %>% as.Date()
 
 sp500 = sp500 %>% group_by(symbol)
 
@@ -256,17 +249,44 @@ sp500 = dplyr::select(sp500,all_of(selecter))
 
 sp500[1] = "SP500"
 
-
-
-return_function_sp500 = function(portfolio){
-  x = ((lead(portfolio$close) - portfolio$close)  / portfolio$close)
-  return(x)
+date_filter = function(portfolio) {
+  counter = 0
+  start_date = portfolio[1,2]
+  start_date = start_date$date %>% as.Date(format = '%Y-%m-%d')
+  end_date = portfolio[nrow(portfolio),2]
+  end_date = end_date$date %>% as.Date(format = '%Y-%m-%d')
+  years = seq(from = start_date, to = end_date, by = 'year')
+  years = length(years)
+  temp_holder1 = NULL
+  temp_holder2 = NULL
+  pb = txtProgressBar(min = 0, max = years, initial = 0, style = 3) # progress bar
+  for (i in 1:years) {
+    year_counter = (2000 + counter)
+    x = selectByDate(portfolio, year = year_counter ) ###############HARDCODED 2000 NEEDS TO BE CHANGED ACCORDING TO YEAR!
+    counter = counter + 1
+    setTxtProgressBar(pb,counter) # Starting the progress bar
+    for (j in 1:12){
+      temp_holder1 = x[months(x$date) %in% month.name[j],]
+      temp_holder1 = temp_holder1[nrow(temp_holder1),]
+      temp_holder2 = rbind(temp_holder1,temp_holder2)
+    }
+      
+  }
+  return(temp_holder2)
 }
 
-sp500$return = return_function_sp500(sp500)
+sp500 = date_filter(sp500)
 
-sp500 %>%
-  mutate(cum_ret = cumprod(1 + sp500$return)) 
+sp500 = sp500 %>% arrange(date)
+
+sp500$return = ((lead(sp500$close) - sp500$close)  / sp500$close)
+
+sp500[is.na(sp500)] = 0
+sp500[sapply(sp500, is.infinite)] = 0
+
+sp500$cum_ret = cumprod(1 + sp500$return) 
+
+sp500 = sp500 %>% dplyr::filter(cum_ret != 0) %>% dplyr::filter(cum_ret != 1)
 
 devtools::unload("bsts")
 ```
@@ -302,10 +322,6 @@ return(tot_ret) #returns the calculations out of the loop
 }
 
 ##
-```
-
-
-```{r, warning = FALSE}
 ## This section retrives a string of numbers (return per rebalancing period)
 ##
 
@@ -422,11 +438,16 @@ total_score[,1] = total_score$date  %>% as.Date() # Converts date to date format
 
 ff_data = read.csv(file="F-F_Research_Data_Factors.CSV", sep=",", header = TRUE) # load file in working directory, seperation is , 
 ff_data$date = ff_data$date %>%  ym()  #put the date into usable format in tune with our other datasets
-ff_data = ff_data %>% dplyr::filter(date > "1980-09-01")  # Filter out everydate below 2000-09-01
+ff_data = ff_data %>% dplyr::filter(date > "1990-01-01")  # Filter out everydate below 1990-09-01
 
 day(ff_data$date) = days_in_month(ff_data$date) # Changing the day in our dataset to match the other data (ie last day of month)
 ff_data$date = ff_data$date  %>% as.Date()
+
+###
+### MATCHING DATES AGAIN TO MAKE SURE ITS IN ORDER!!!!! I HATE DATES ! 
 day(total_score$date) = days_in_month(total_score$date) # to match up with ff_dates
+day(total_score$date) = days_in_month(total_score$date) 
+day(sp500$date) = days_in_month(sp500$date) 
 ```
 
 ```{r}
@@ -442,25 +463,30 @@ ff_data$ff_rf = ff_data$RF/100
 # Goal: Take data from ff_data, regarding risk free rate etc. Filter it so we can fit it into the calculated dataset
 #
 
-locate_ffdates = function(ff_data){
+locate_ffdates = function(data){
   uniq_dates = unique(total_score$date)
   temp_var1 = NULL
   temp_var2 = NULL
   for (i in 1:length(uniq_dates)){   # Goes through all dates in total_score
-    temp_var1   = ff_data %>% dplyr::filter(date == uniq_dates[i])# filters out all the dates that are not in totalscore.
+    temp_var1   = data %>% dplyr::filter(date == uniq_dates[i])# filters out all the dates that are not in totalscore.
     temp_var2= bind_rows(temp_var1 ,temp_var2)
   }
   return(temp_var2) #Returns the data 
 }
 
-total_score$date = total_score$date %>% as.Date()
+total_score$date = total_score$date %>% as.Date() # just making sure dates are in order as usual before i put it into the next func
 
 #ff_data = ff_data %>% arrange(date) %>% filter(date <= total_score$date[1])
 ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
 
 sp500_dates = locate_ffdates(sp500)
+
+selecter = c("date", "cum_ret") # Variables to have in top and bot tibble
+sp500_dates2 = sp500_dates %>% ungroup() %>%  dplyr::select(all_of(selecter))
+names(sp500_dates2)[2] = "sp500_cumret" 
   
-#total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
+total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
+total_score = merge(total_score, sp500_dates2, by.x="date", by.y="date")
 ```
 
 ```{r}
@@ -473,11 +499,13 @@ total_score$date = total_score$date %>% as.Date()
 # Return of sp 500 needs to be inserted 
 #
 
+
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
-      # geom_line(aes(y = wml, color = "wml"), size = 1) + 
+       geom_line(aes(y = wml, color = "wml"), size = 1) + 
+       geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
        #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
        #geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) +  # NOT CUMULATIVE
        labs(x = 'Date',
@@ -500,16 +528,16 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 
 ```{r}
-
 colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
-       geom_line(aes(y = mid, color = "mid"), size = 1) + 
+       #geom_line(aes(y = mid, color = "mid"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
        geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
+       geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
@@ -531,11 +559,121 @@ ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
 summary(ff_reg)
 ```
 
+
 ```{r}
-beta = cov(total_score$wml, total_score$ff_mkt_rf)/var(total_score$ff_mkt_rf)
+#
+# Before implementing a time series we need to create top and bot into monthly returns
+#
+month_ret = function (portfolio){ # Defining function
+  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+  tot_ret = c() # empty vector 
+  sum_w = 0
+  temp = 0 
+    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+      z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
+      ret = (z$return)  # Investing 1 dollar divided by stocks multiplied with returns
+      tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
+    }
+return(tot_ret) #returns the calculations out of the loop
+}
+
+month_ret_top = month_ret(top) %>% bind_cols(unique(top$date)) 
+names(month_ret_top)[1] = "ret_mont_top"
+names(month_ret_top)[2] = "date"
+
+month_ret_bot = month_ret(bot) %>% bind_cols(unique(bot$date))
+names(month_ret_bot)[1] = "ret_mont_bot"
+month_ret_tot = bind_cols(month_ret_top,month_ret_bot$ret_mont_bot)
+names(month_ret_tot)[3] = "ret_mont_bot"
+
+month_ret_tot = month_ret_tot %>% arrange(date)
+
+month_ret_tot = bind_cols(month_ret_tot,sp500_dates$return )
+names(month_ret_tot)[4] = "sp500_ret"
+
+month_ret_tot = month_ret_tot %>% relocate(date, .before = ret_mont_top)# Just OCD kicking in, moving date to front col 
+
+month_ret_tot %>% head()
+```
+
+
+
+```{r}
+beta = cov(total_score$top, total_score$sp500_cumret)/var(total_score$sp500_cumret)
+
+ts_sp500_ret = ts(sp500_dates$return, start = c(2000, 10), freq = 12)
+ts_top_ret = ts(month_ret_tot$ret_mont_top , start = c(2000, 10), freq = 12)
+ts_bot_ret = ts(month_ret_tot$ret_mont_bot , start = c(2000, 10), freq = 12)
+
+##
+## Make a risk free rate ts ? is it neccecery?! 
+
+
+CAPM.beta(ts_top_ret, ts_sp500_ret, Rf = 0) # THIS Works in our test!  
+
+beta = cov(ts_top_ret, ts_sp500_ret)/var(ts_sp500_ret) # This is equal to the one above, to check the function! 
 total_score$alpha = total_score$wml - total_score$ff_rf - beta * (total_score$ff_mkt_rf - total_score$ff_rf)
+```
+
+```{r}
+library(rollRegres)
+
+reg_top = roll_regres(ret_mont_top ~ sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
+            do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
+
+reg_bot = roll_regres(ret_mont_bot ~ sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
+            do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
+
+tail(reg_top$coefs)
+tail(reg_bot$coefs)
+
+reg_top_sum = bind_cols(month_ret_tot$date ,as.data.frame(reg_top$coefs))
+reg_bot_sum = bind_cols(month_ret_tot$date ,as.data.frame(reg_bot$coefs)) 
+
+names(reg_top_sum)[1] = "date"
+names(reg_top_sum)[3] = "beta_top"
+
+names(reg_bot_sum)[1] = "date"
+names(reg_bot_sum)[3] = "beta_bot"
+
+reg_top_sum = reg_top_sum %>% na.omit() 
+reg_bot_sum = reg_bot_sum %>% na.omit()
+
+
+# Visualization of the scores 
+reg_top_sum$date = reg_top_sum$date %>% as.Date()
+
+# 
+# ts_reg_top_sum = ts(reg_top_sum$beta_top[,1], start = c(2000, 10), freq = 12)
+# ts_reg_top_sum_test = ts(reg_top_sum$beta_top, start = c(2000, 10), freq = 12)
+
+ts_reg_top_sum %>% plot()
+
+
+reg_top_sum %>% ggplot( aes(x=date, y=beta_top))+
+  geom_line()+ylab("Rolling Beta")+
+  ggtitle("Rolling Beta  top vs sp500")
+
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
+
+ggplot(reg_top_sum, aes(x = date)) + # Uses main dataset
+       geom_line(aes(y = beta_top, color = "top"), size = 1) +
+       #geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       #geom_line(aes(y = mid, color = "mid"), size = 1) + 
+       #geom_line(aes(y = wml, color = "wml"), size = 1) + 
+       #geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
+       #geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_x_date(date_breaks = '5 year',
+               date_labels = '%Y') +
+    scale_color_manual(values = colors)
+
 
 ```
+
 
 ```{r}
 ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),colour="#009682")+
@@ -677,7 +815,7 @@ garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
 summary(garch_df)
 plot((garch_df))
 
-garch_df@residuals%>% plot(type = "l")
+garch_df@residuals %>% plot(type = "l")
 #devtools::unload("forecast")
 #devtools::unload("fGarch")
 #devtools::unload("aTSA")
@@ -730,9 +868,9 @@ test = NULL
 
 wml_chris$forcast = (wml_chris$mom_6 / wml_chris$mom_1)^(1/6) 
 
-wml_chris$forcast = ((wml_chris$forcast - 1)*100) 
+wml_chris$forcast = ((wml_chris$forcast - 1)*100) # n[t-1]
 
-wml_chris$forcast_2 = ((((wml_chris$forcast)^2 - wml_chris$forcast)^2))
+wml_chris$forcast_2 = ((((wml_chris$forcast)^2 - wml_chris$forcast)^2)) #sigma^2[t-1]
 
 wml_chris %>% head()
 ```

@@ -144,16 +144,16 @@ test = NULL
 library(matrixStats)
 
 table_scrubber = function() {
-  df[7:17] = na_if(df[7:17], 0)
+  df[6:16] = na_if(df[6:16], 0)
   df[sapply(df, is.infinite)] = NA
   df[sapply(df, is.nan)] = NA
 }
 
 #df[df[7:17] == 0] = NA
 table_scrubber()
-df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
+df$available_returns = rowSums(!is.na(df[6:16])) # compute number of available returns
 
-df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T) %>% log()
+df$cum_return = matrixStats::rowProds(1+as.matrix(df[6:16]), na.rm=T) %>% log()
 
 table_scrubber() # Just makeing sure my data is nice and shiny 
 
