@@ -2,10 +2,6 @@
 title: "R Notebook"
 output: html_notebook
 ---
----
-title: "R Notebook"
-output: html_notebook
----
 
 ```{r}
 library(dplyr)
@@ -16,6 +12,7 @@ library(plyr)
 
 ```{r}
 library(bsts)
+library(readr)
 
 tot_df_db <- read_csv("tot_df_db.csv", col_types = cols(date = col_date(format = "%Y-%m-%d")))
 
@@ -48,26 +45,31 @@ df = dplyr::filter(df, !symbol %in% unwanted)
 
 #sp500_df = NULL
 
-devtools::unload("bsts")
 unwanted = NULL
 month_day = NULL
 ```
 
+
 ```{r}
 ##
-## CREATING A MONTHLY DATASET ! 
+## Cleaning some data, removing some dates
 ##
 df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
-#df = dplyr::filter(df, date > "2002-12-31")
+df = dplyr::filter(df, date > "2005-12-31")
 
-#df = df %>% dplyr::filter(date > "1980-01-01")
-df = df %>% dplyr::filter(close != 0) 
-#df = df %>% filter(mcap > 0) 
+df = df %>% dplyr::filter(close != 0) #%>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
+
+transform(df, date = bsts::LastDayInMonth(df$date))
 
 df = df %>% group_by(symbol) %>% arrange(date) 
 
+devtools::unload("bsts")
+devtools::unload("readr")
+
 ```
+
+
 
 ```{r}
 # Return calculation for each stock in. More accurate then the "simple" lead - var /var method 
@@ -133,8 +135,6 @@ mom_2_12= function (portfolio){ # Defining function
 
 test  = mom_2_12(df)
 df = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
-
-#df_save = df
 test = NULL 
 ```
 
@@ -144,34 +144,34 @@ test = NULL
 library(matrixStats)
 
 table_scrubber = function() {
-  df[6:16] = na_if(df[6:16], 0)
+  df[7:17] = na_if(df[7:17], 0)
   df[sapply(df, is.infinite)] = NA
   df[sapply(df, is.nan)] = NA
 }
 
 #df[df[7:17] == 0] = NA
 table_scrubber()
-df$available_returns = rowSums(!is.na(df[6:16])) # compute number of available returns
+df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns
 
-df$cum_return = matrixStats::rowProds(1+as.matrix(df[6:16]), na.rm=T) %>% log()
+df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T) %>% log()
 
 table_scrubber() # Just makeing sure my data is nice and shiny 
 
 devtools::unload("matrixStats")
 ```
 
+
 ```{r}
 # Before we input it into quantiles we have to normalize our data, as it can only recive 0 and 1. 
 # Our data set goes from -1 to 1 
 
-df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns by devided on number on total number of rets
-df = df %>% dplyr::filter(available_returns >= 8) # Above 8 monthly returns in ranking
+df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns devided on number on total number of rets
+df = df %>% dplyr::filter(available_returns >= 8) %>% dplyr::filter(return != 0)# Above 8 monthly returns in ranking
 x = df$cum_return_norm 
 df$norm_norm_cret = (x-min(x))/(max(x)-min(x))
 
 x = NULL
 ```
-
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
@@ -206,13 +206,8 @@ names(df)[names(df) == "value"] <- "quantile" # Renames the colume value to quan
 
 ```
 
-
-
 ```{r}
-#
-#                        DOES EQUALY WEIGHTED PORTFOLIO
-###################################################################
-
+# Creates monthly value weights per stock 
 v_weights= function (portfolio){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   temp_holder = 0 %>% as.data.frame()
@@ -226,12 +221,12 @@ v_weights= function (portfolio){ # Defining function
         for (j in 1:10){ 
           x = z
           a = x %>% dplyr::filter(quantile == j)
-          tot_w = length(unique(a$symbol))
-          a$vw  = 1 / tot_w
+          tot_w = nrow(x)  
+          a$vw  = (1/tot_w) %>% as.data.frame()
           temp_holder = bind_rows(a,temp_holder) 
           if (j == 1 && i == 1) { # This is only here to remoe the one binding col!
-             temp_holder = temp_holder %>% dplyr::slice(-c(nrow(temp_holder)))
-             }
+             temp_holder = temp_holder %>% slice(-c(nrow(temp_holder)))
+             } 
         }
       
     }
@@ -243,11 +238,9 @@ df = df %>% slice(-c(ncol(df)))
 
 #names(df)[ncol(df)] = 'value_w'
 
-dfx = df %>% filter(quantile == 1) %>% dplyr::filter(date == "2010-12-31") # Checking that weights sum to one 
+dfx = df %>% dplyr::filter(quantile == 1) %>% dplyr::filter(date == "2008-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
-
-df_save2 = df
 ```
 
 
@@ -268,13 +261,15 @@ top = dplyr::select(top_1,all_of(selecter)) # Selects from selecter
 mid = dplyr::select(mid_1,all_of(selecter)) # Selects from selecter
 bot = dplyr::select(bot_1,all_of(selecter)) # Selects from selecter
 
+portfolio = top
+
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
 tot_ret = c() # empty vector 
 sum_w = 0
 temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-    if (i == 1){  # First month do this 
+    if (i == 1){  # First round do this 
       z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
       ret = (1+z$return) * z$vw  # Investing 1 dollar divided by stocks multiplied with returns
       tot_ret[i]  = sum(ret) # Summarize all the returns from investing one dollar 
@@ -298,6 +293,8 @@ bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
 
 ```{r}
 #creating wml portfolio
+
+### NEEDS REWORK BECOUSE OF NORM NORM
 wml_weights= function (portfolio){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   temp_holder = 0 %>% as.data.frame()
@@ -309,7 +306,7 @@ wml_weights= function (portfolio){ # Defining function
       count = count + 1 # Adds 1 to the counter for progressbar 
       setTxtProgressBar(pb,count) # Starting the progress bar
           x = z
-          tot_w = length(unique(z$symbol)) 
+          tot_w = nrow(x)  
           x$vw  = (1/tot_w) %>% as.data.frame()
           temp_holder = bind_rows(x,temp_holder) 
           if (i == 1) { # This is only here to remoe the one binding col!
@@ -380,7 +377,7 @@ total_table = function(){
     total_score = NULL
     total_score$date  = as_tibble(top_score_reb$date)
     total_score$top = top_score_reb$cum_rets
-    total_score$mid = mid_score_reb$cum_rets
+    #total_score$mid = mid_score_reb$cum_rets
     total_score$bot = bot_score_reb$cum_rets
     total_score$wml = wml_score_reb$cum_rets
   return(total_score)
@@ -448,11 +445,11 @@ total_score$date = total_score$date %>% as.Date()
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
-       geom_line(aes(y = mid, color = "mid" ), size = 1) + 
+       #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
       #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
-       geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) + 
+       #geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) +  # NOT CUMULATIVE
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
@@ -474,12 +471,13 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 ```{r}
 
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = mid, color = "mid"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
        geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
        labs(x = 'Date',
@@ -514,6 +512,7 @@ ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),col
   xlab("Date")+
   ylab("Alpha")
 ```
+
 ```{r}
 mean(total_score$alpha)
 count(total_score$alpha > 0)
@@ -538,7 +537,7 @@ total_score$bear_market = total_score$USREC*6.5
 
 ggplot(data=total_score,aes(x=date)) + 
             geom_area(aes(y=USREC,color="red"),fill=rgb(red = 1, green = 0, blue = 0, alpha = 0.5))+
-            geom_line(aes(y=wml, color="WML"))+
+            geom_line(aes(y=top, color="top"))+
             xlab("Date")+
             ylab("Dollar value of investment")+
             ylim(0,6.5)
@@ -546,13 +545,13 @@ ggplot(data=total_score,aes(x=date)) +
 ```
 
 ```{r, value at risk }
-VaR(total_score$wml)
+VaR(total_score$top) # This has to be investigated 
 VaR(total_score$ff_mkt_rf)
 
 ```
 
 ```{r}
-df_sharpe_wml = total_score[,c("date","wml")]
+df_sharpe_wml = total_score[,c("date","top")]
 df_sharpe_wml = df_sharpe_wml %>% as.data.frame()
 row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
 #df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
@@ -576,6 +575,8 @@ df_sharpe_mkt = total_score[,c("date","ff_mkt_rf")]
 
 ```{r, warning = FALSE}
 library(fGarch)
+library(aTSA)
+library(forecast)
 
 # Is this Weights ??? What are these things?? 
 
@@ -584,11 +585,74 @@ ts_test = df %>% dplyr::filter(quantile == 10)
 # ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
 # plot(ts_df^2)
 
-ts_df = ts(log(ts_test$return+1), start = c(2000, 10), freq = 12)
+ts_df = ts(log(ts_test$return+1), start = c(2005, 10), freq = 12)
 plot(ts_df)
 plot(ts_df^2)
 
+acf(ts_df, lag.max=30)
+adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
+pacf(ts_df)
 
+
+Lambda = BoxCox.lambda(ts_df)
+#auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
+
+#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
+#garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
+#summary(garch_df)
+#plot((garch.fit))
+
+#garch.fit@residuals%>% plot(type = "l")
+#devtools::unload("forecast")
+#devtools::unload("fGarch")
+#devtools::unload("aTSA")
+```
+```{r}
+ts_garch = ts_df %>% as.data.frame()
+# ts_garch = df %>% dplyr::filter(quantile == 10)
+ts_garch = cbind(ts_test, ts_garch)
+
+```
+
+
+Need to make a new col wit residuals
+```{r}
+library(fGarch)
+library(aTSA)
+library(forecast)
+
+# Is this Weights ??? What are these things?? 
+
+ts_totscore = total_score$top
+
+# ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
+# plot(ts_df^2)
+
+ts_df = ts(log(ts_totscore), start = c(2005, 12), freq = 12)
+plot(ts_df)
+plot(ts_df^2)
+
+acf(ts_df, lag.max=30)
+adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
+pacf(ts_df)
+
+
+Lambda = BoxCox.lambda(ts_df)
+auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
+
+#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
 garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
 summary(garch_df)
+plot((garch_df))
+
+garch_df@residuals%>% plot(type = "l")
+#devtools::unload("forecast")
+#devtools::unload("fGarch")
+#devtools::unload("aTSA")
+```
+
+```{r}
+#ts_garch = ts_df %>% as.data.frame()
+# ts_garch = df %>% dplyr::filter(quantile == 10)
+##ts_garch = cbind(ts_test, ts_garch)
 ```

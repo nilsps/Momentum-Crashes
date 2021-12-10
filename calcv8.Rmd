@@ -21,17 +21,29 @@ devtools::unload("readr")
 ```
 
 ```{r}
+library(bsts)
 ##
 ## Cleaning some data, removing some dates
 ##
 df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
-df = dplyr::filter(df, date > "2005-12-31")
+portstart_date = c("1999-12-31")
+
+df = dplyr::filter(df, date > portstart_date)
 
 df = df %>% dplyr::filter(close != 0) %>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
 
+#month_day = LastDayInMonth(df$date) %>% as.Date()
+#month_day = month_day %>% unique()
+
+transform(df, date = bsts::LastDayInMonth(df$date))
+
+#df = dplyr::filter(df, date == month_day) 
+
 df = df %>% group_by(symbol) %>% arrange(date) 
 
+
+#devtools::unload("bsts")
 ```
 
 ```{r}
@@ -129,16 +141,18 @@ devtools::unload("matrixStats")
 # Our data set goes from -1 to 1 
 
 df$cum_return_norm = df$cum_return / df$available_returns #Normalising our returns devided on number on total number of rets
-df = df %>% dplyr::filter(available_returns >= 8) %>% dplyr::filter(return != 0)# Above 8 monthly returns in ranking
+df = df %>% dplyr::filter(available_returns >= 8) #%>% dplyr::filter(return != 0)# Above 8 monthly returns in ranking
 x = df$cum_return_norm 
 df$norm_norm_cret = (x-min(x))/(max(x)-min(x))
+
+x = NULL
 ```
 
 ```{r, putting into monthly deciles}
 #This 8 month returns, is it right or not ? Since i will recive 6 months where there are Zero companies that has 8 month of ret
 
 decile_seperation = function(portfolio){
-  x = portfolio %>% dplyr::distinct(norm_norm_cret, .keep_all = T)
+  x = portfolio #%>% dplyr::distinct(norm_norm_cret, .keep_all = T)
   reb_month =  unique(x$date) # Finding all unique dates 
   temp_holder1 = NULL
   temp_holder2 = NULL # Empty working var 
@@ -199,7 +213,7 @@ df = df %>% slice(-c(ncol(df)))
 
 #names(df)[ncol(df)] = 'value_w'
 
-dfx = df %>% filter(quantile == 1) %>% dplyr::filter(date == "2008-12-31") # Checking that weights sum to one 
+dfx = df %>% dplyr::filter(quantile == 1) %>% dplyr::filter(date == "2008-12-31") # Checking that weights sum to one 
 sum(dfx$vw) # OK if it sums to one
 dfx = NULL
 ```
@@ -211,7 +225,51 @@ mid_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance
 bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
 
+```{r}
+## CREATING A MONTHLY DATASET for SP500!
+##
+library(bsts)
 
+from = today() - years(40)
+
+sp500 = tq_get(c("^GSPC"), get = "stock.prices", from = from) %>%
+    group_by(symbol)
+
+
+sp500$date =  as.Date(sp500$date, format = '%Y-%m-%d')
+
+sp500 = dplyr::filter(sp500, date > portstart_date)
+
+month_day = LastDayInMonth(sp500$date) %>% as.Date()
+
+month_day = month_day %>% unique()
+ # This is due to extreme amounts of NAs in 1970s-1960 to get a better dataset. 
+
+sp500 = dplyr::filter(sp500, date == month_day) #Filters out all other dates for the month except last one
+
+transform(sp500, date = bsts::LastDayInMonth(sp500$date))
+
+sp500 = sp500 %>% group_by(symbol)
+
+selecter = c("symbol", "date", "close") # Variables to have in top and bot tibble
+sp500 = dplyr::select(sp500,all_of(selecter)) 
+
+sp500[1] = "SP500"
+
+
+
+return_function_sp500 = function(portfolio){
+  x = ((lead(portfolio$close) - portfolio$close)  / portfolio$close)
+  return(x)
+}
+
+sp500$return = return_function_sp500(sp500)
+
+sp500 %>%
+  mutate(cum_ret = cumprod(1 + sp500$return)) 
+
+devtools::unload("bsts")
+```
 
 ```{r, warning = FALSE}
 ###
@@ -222,7 +280,6 @@ top = dplyr::select(top_1,all_of(selecter)) # Selects from selecter
 mid = dplyr::select(mid_1,all_of(selecter)) # Selects from selecter
 bot = dplyr::select(bot_1,all_of(selecter)) # Selects from selecter
 
-portfolio = top
 
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
@@ -245,8 +302,13 @@ return(tot_ret) #returns the calculations out of the loop
 }
 
 ##
+```
+
+
+```{r, warning = FALSE}
 ## This section retrives a string of numbers (return per rebalancing period)
 ##
+
 top_score = cumalative_ret_portfolio(top) # runs the script on top portfolio 
 mid_score = cumalative_ret_portfolio(mid) # runs on bot portf.
 bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
@@ -311,6 +373,7 @@ sum(dfx$vw) # OK if it sums to one
 # dfx = NULL
 ```
 
+
 ```{r}
 ##
 # Takes the dates and merges then with the scores, making a more user friendly experience
@@ -338,7 +401,7 @@ total_table = function(){
     total_score = NULL
     total_score$date  = as_tibble(top_score_reb$date)
     total_score$top = top_score_reb$cum_rets
-    total_score$mid = mid_score_reb$cum_rets
+    #total_score$mid = mid_score_reb$cum_rets
     total_score$bot = bot_score_reb$cum_rets
     total_score$wml = wml_score_reb$cum_rets
   return(total_score)
@@ -394,8 +457,10 @@ total_score$date = total_score$date %>% as.Date()
 
 #ff_data = ff_data %>% arrange(date) %>% filter(date <= total_score$date[1])
 ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
+
+sp500_dates = locate_ffdates(sp500)
   
-total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
+#total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into 
 ```
 
 ```{r}
@@ -404,12 +469,16 @@ colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , "
 total_score$date = total_score$date %>% as.Date()  
 #total_score$wml = total_score$wml %>% as.data.frame()
 
+#
+# Return of sp 500 needs to be inserted 
+#
+
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
-       geom_line(aes(y = mid, color = "mid" ), size = 1) + 
+       #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
-       geom_line(aes(y = wml, color = "wml"), size = 1) + 
-      #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
+      # geom_line(aes(y = wml, color = "wml"), size = 1) + 
+       #geom_line(aes(y = ff_mkt_rf, color = " ff_mkt_rf"), size = 1) +
        #geom_line(aes(y = ff_rf, color = " ff_rf"), size = 1) +  # NOT CUMULATIVE
        labs(x = 'Date',
        y = 'Cumulative Returns',
@@ -498,7 +567,7 @@ total_score$bear_market = total_score$USREC*6.5
 
 ggplot(data=total_score,aes(x=date)) + 
             geom_area(aes(y=USREC,color="red"),fill=rgb(red = 1, green = 0, blue = 0, alpha = 0.5))+
-            geom_line(aes(y=wml, color="WML"))+
+            geom_line(aes(y=top, color="top"))+
             xlab("Date")+
             ylab("Dollar value of investment")+
             ylim(0,6.5)
@@ -506,13 +575,13 @@ ggplot(data=total_score,aes(x=date)) +
 ```
 
 ```{r, value at risk }
-VaR(total_score$wml)
+VaR(total_score$top) # This has to be investigated 
 VaR(total_score$ff_mkt_rf)
 
 ```
 
 ```{r}
-df_sharpe_wml = total_score[,c("date","wml")]
+df_sharpe_wml = total_score[,c("date","top")]
 df_sharpe_wml = df_sharpe_wml %>% as.data.frame()
 row.names(df_sharpe_wml)= as.Date(df_sharpe_wml$date) 
 #df_sharpe_wml = df_sharpe_wml %>% dplyr::select(wml)
@@ -546,7 +615,7 @@ ts_test = df %>% dplyr::filter(quantile == 10)
 # ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
 # plot(ts_df^2)
 
-ts_df = ts(log(ts_test$return+1), start = c(1990, 10), freq = 12)
+ts_df = ts(log(ts_test$return+1), start = c(2005, 10), freq = 12)
 plot(ts_df)
 plot(ts_df^2)
 
@@ -568,6 +637,8 @@ Lambda = BoxCox.lambda(ts_df)
 #devtools::unload("fGarch")
 #devtools::unload("aTSA")
 ```
+
+
 ```{r}
 ts_garch = ts_df %>% as.data.frame()
 # ts_garch = df %>% dplyr::filter(quantile == 10)
@@ -589,7 +660,7 @@ ts_totscore = total_score$top
 # ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
 # plot(ts_df^2)
 
-ts_df = ts(log(ts_totscore$top), start = c(1991, 10), freq = 12)
+ts_df = ts(log(ts_totscore), start = c(2005, 12), freq = 12)
 plot(ts_df)
 plot(ts_df^2)
 
@@ -599,22 +670,72 @@ pacf(ts_df)
 
 
 Lambda = BoxCox.lambda(ts_df)
-#auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
+auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
 
-garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
-#garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
+#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
+garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
 summary(garch_df)
-plot((garch.fit))
+plot((garch_df))
 
-garch.fit@residuals%>% plot(type = "l")
+garch_df@residuals%>% plot(type = "l")
 #devtools::unload("forecast")
 #devtools::unload("fGarch")
 #devtools::unload("aTSA")
 ```
+
 ```{r}
-ts_garch = ts_df %>% as.data.frame()
+#ts_garch = ts_df %>% as.data.frame()
 # ts_garch = df %>% dplyr::filter(quantile == 10)
-ts_garch = cbind(ts_test, ts_garch)
+##ts_garch = cbind(ts_test, ts_garch)
 ```
+
+
+```{r}
+# This creates 12 cols, these cols will tell you if you sold it today, what will be the return 
+
+ret_1_6 = function (portfolio){ # Defining function
+  uniq_stocks =  unique(portfolio$symbol) # finds each stock to calc returns
+  temp_holder = 0 %>% as.data.frame()
+  temp_holder2 = 0 %>% as.data.frame()
+  temp_holder3 = 0 %>% as.data.frame()
+  count = 0
+  pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3) # progress bar
+   z = 0 %>% as.data.frame()
+  for (i in 1:nrow(portfolio)){ # for each date we have in the portfolio do this
+      z = portfolio[i,]
+      count = count + 1 # Adds 1 to the counter for progressbar 
+      setTxtProgressBar(pb,count) # Starting the progress bar
+      for(j in 1:6) {
+        #temp_holder  = momentum(z$return, n=j)
+        temp_holder = portfolio$wml[6+j+count]
+        name = paste0("mom", sep = "_", j)
+        z[[name]] =  temp_holder 
+        if (j == 6){
+          temp_holder2  = bind_rows(temp_holder2, z)
+        } 
+     }
+    }
+  return(temp_holder2)
+}  
+
+test  = ret_1_6(total_score)
+test = test %>% dplyr::distinct(date, .keep_all = T)
+
+wml_chris = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here. 
+test = NULL 
+```
+
+```{r}
+# Return forcast ! 
+
+wml_chris$forcast = (wml_chris$mom_6 / wml_chris$mom_1)^(1/6) 
+
+wml_chris$forcast = ((wml_chris$forcast - 1)*100) 
+
+wml_chris$forcast_2 = ((((wml_chris$forcast)^2 - wml_chris$forcast)^2))
+
+wml_chris %>% head()
+```
+
 
 
