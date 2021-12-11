@@ -27,7 +27,7 @@ library(bsts)
 ##
 df$date =  as.Date(df$date, format = '%d.%m.%Y')
 
-portstart_date = c("1999-12-31")
+portstart_date = c("2004-12-31")
 
 df = dplyr::filter(df, date > portstart_date)
 
@@ -261,8 +261,8 @@ date_filter = function(portfolio) {
   temp_holder2 = NULL
   pb = txtProgressBar(min = 0, max = years, initial = 0, style = 3) # progress bar
   for (i in 1:years) {
-    year_counter = (2000 + counter)
-    x = selectByDate(portfolio, year = year_counter ) ###############HARDCODED 2000 NEEDS TO BE CHANGED ACCORDING TO YEAR!
+    year_counter = (2005 + counter) ###############HARDCODED 2000 NEEDS TO BE CHANGED ACCORDING TO YEAR! ###########
+    x = selectByDate(portfolio, year = year_counter ) 
     counter = counter + 1
     setTxtProgressBar(pb,counter) # Starting the progress bar
     for (j in 1:12){
@@ -528,7 +528,7 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 
 ```{r}
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " sp500" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
@@ -537,7 +537,7 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        #geom_line(aes(y = mid, color = "mid"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
        geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
+       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
@@ -550,14 +550,14 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
 
 
 
-```{r}
-total_score$return_wml_reg = total_score$wml - total_score$cu_ff_rf 
-total_score
-
-# Regressing the returns 
-ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
-summary(ff_reg)
-```
+# ```{r}
+# total_score$return_wml_reg = total_score$wml - total_score$cu_ff_rf 
+# total_score
+# 
+# # Regressing the returns 
+# ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
+# summary(ff_reg)
+# ```
 
 
 ```{r}
@@ -588,7 +588,7 @@ names(month_ret_tot)[3] = "ret_mont_bot"
 
 month_ret_tot = month_ret_tot %>% arrange(date)
 
-month_ret_tot = bind_cols(month_ret_tot,sp500_dates$return )
+month_ret_tot = bind_cols(month_ret_tot,sp500_dates$return)
 names(month_ret_tot)[4] = "sp500_ret"
 
 month_ret_tot = month_ret_tot %>% relocate(date, .before = ret_mont_top)# Just OCD kicking in, moving date to front col 
@@ -601,9 +601,9 @@ month_ret_tot %>% head()
 ```{r}
 beta = cov(total_score$top, total_score$sp500_cumret)/var(total_score$sp500_cumret)
 
-ts_sp500_ret = ts(sp500_dates$return, start = c(2000, 10), freq = 12)
-ts_top_ret = ts(month_ret_tot$ret_mont_top , start = c(2000, 10), freq = 12)
-ts_bot_ret = ts(month_ret_tot$ret_mont_bot , start = c(2000, 10), freq = 12)
+ts_sp500_ret = ts(sp500_dates$return, start = c(2005, 1), freq = 12)
+ts_top_ret = ts(month_ret_tot$ret_mont_top , start = c(2005, 1), freq = 12)
+ts_bot_ret = ts(month_ret_tot$ret_mont_bot , start = c(2005, 1), freq = 12)
 
 ##
 ## Make a risk free rate ts ? is it neccecery?! 
@@ -618,17 +618,37 @@ total_score$alpha = total_score$wml - total_score$ff_rf - beta * (total_score$ff
 ```{r}
 library(rollRegres)
 
-reg_top = roll_regres(ret_mont_top ~ sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
+normalizefunc = function(portfolio, colnumb){
+  x = portfolio[colnumb]
+  y = (x-min(x))/(max(x)-min(x))
+  return(y)
+}
+
+month_ret_tot$norm_ret_mont_top = normalizefunc(month_ret_tot, 2) 
+month_ret_tot$norm_ret_mont_bot = normalizefunc(month_ret_tot, 3)
+month_ret_tot$norm_sp500_ret = normalizefunc(month_ret_tot, 4)
+
+month_ret_tot$norm_ret_mont_top = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_top)))
+month_ret_tot$norm_ret_mont_bot = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_bot)))
+month_ret_tot$norm_sp500_ret = as.numeric(as.character(unlist(month_ret_tot$norm_sp500_ret)))
+
+month_ret_tot[sapply(month_ret_tot, is.infinite)] = 0.99999 # Dummy encoding
+month_ret_tot[month_ret_tot == 0] <- 0.000001 # Dummy encoding
+month_ret_tot[month_ret_tot == 1] <- 0.999999 # Dummy encoding
+
+reg_top = roll_regres(norm_ret_mont_top ~ norm_sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
-reg_bot = roll_regres(ret_mont_bot ~ sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
+reg_bot = roll_regres(norm_ret_mont_bot ~ norm_sp500_ret, month_ret_tot, width = 6, #Testing top vs SP500, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
-tail(reg_top$coefs)
-tail(reg_bot$coefs)
 
 reg_top_sum = bind_cols(month_ret_tot$date ,as.data.frame(reg_top$coefs))
 reg_bot_sum = bind_cols(month_ret_tot$date ,as.data.frame(reg_bot$coefs)) 
+
+names(month_ret_tot)[5] = "norm_ret_mont_top"
+names(month_ret_tot)[6] = "norm_ret_mont_bot"
+names(month_ret_tot)[7] = "norm_ret_sp500"
 
 names(reg_top_sum)[1] = "date"
 names(reg_top_sum)[3] = "beta_top"
@@ -639,16 +659,11 @@ names(reg_bot_sum)[3] = "beta_bot"
 reg_top_sum = reg_top_sum %>% na.omit() 
 reg_bot_sum = reg_bot_sum %>% na.omit()
 
-
-# Visualization of the scores 
 reg_top_sum$date = reg_top_sum$date %>% as.Date()
 
 # 
 # ts_reg_top_sum = ts(reg_top_sum$beta_top[,1], start = c(2000, 10), freq = 12)
 # ts_reg_top_sum_test = ts(reg_top_sum$beta_top, start = c(2000, 10), freq = 12)
-
-ts_reg_top_sum %>% plot()
-
 
 reg_top_sum %>% ggplot( aes(x=date, y=beta_top))+
   geom_line()+ylab("Rolling Beta")+
@@ -657,21 +672,22 @@ reg_top_sum %>% ggplot( aes(x=date, y=beta_top))+
 colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", " mid" = "black")
 
 ggplot(reg_top_sum, aes(x = date)) + # Uses main dataset
-       geom_line(aes(y = beta_top, color = "top"), size = 1) +
+       geom_line(aes(y = beta_top, color = "top"), size = 0.5) +
+       geom_line(data = reg_bot_sum, aes(y = beta_bot, color = "bot"), size = 0.5) +
        #geom_line(aes(y = bot, color = "bot"), size = 1) + 
        #geom_line(aes(y = mid, color = "mid"), size = 1) + 
        #geom_line(aes(y = wml, color = "wml"), size = 1) + 
        #geom_line(aes(y = cu_ff_mkt_rf, color = " cu_ff_mkt_rf"), size = 1) + 
        #geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
        labs(x = 'Date',
-       y = 'Cumulative Returns',
+       y = '6 month rolling log beta ',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_y_continuous(breaks = seq(-5,5,1)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
 
-
+devtools::unload("rollRegres")
 ```
 
 
@@ -798,7 +814,7 @@ ts_totscore = total_score$top
 # ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
 # plot(ts_df^2)
 
-ts_df = ts(log(ts_totscore), start = c(2005, 12), freq = 12)
+ts_df = ts(log(ts_totscore), start = c(2005, 1), freq = 12)
 plot(ts_df)
 plot(ts_df^2)
 
@@ -874,6 +890,25 @@ wml_chris$forcast_2 = ((((wml_chris$forcast)^2 - wml_chris$forcast)^2)) #sigma^2
 
 wml_chris %>% head()
 ```
+
+```{r}
+
+vol_calc = function (data){
+  out = volatility(data, n = 6, calc = "close", N = 12, mean0 = FALSE)
+  return(out)
+}
+
+month_ret_tot$top_vol = vol_calc(month_ret_tot$norm_ret_mont_top)
+month_ret_tot$sp500_vol =  vol_calc(month_ret_tot$norm_ret_sp500)
+month_ret_tot$bot_vol = vol_calc(month_ret_tot$norm_ret_mont_bot)
+
+```
+
+```{r}
+
+```
+
+
 
 
 
