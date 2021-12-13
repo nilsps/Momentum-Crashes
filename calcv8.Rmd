@@ -404,8 +404,8 @@ sum(dfx$vw) # OK if it sums to one
 # Takes the dates and merges then with the scores, making a more user friendly experience
 ##
 scores = function (portfolio, parent_portfolio){ # makes function
-  portfolio = portfolio %>% as_tibble # converts the score into a tibble for easier processing 
-  colnames(portfolio)[1] = "cum_rets"  # Rename the cumalative returns 
+  portfolio = portfolio %>% as_tibble() # converts the score into a tibble for easier processing 
+  (portfolio)[1] = "cum_rets"  # Rename the cumalative returns 
   dates = parent_portfolio$date  %>% as.Date() %>% unique() # Find the dates from the parent calulations (pre last function)
   portfolio$date  =  dates  # takes the dates and put them into tbe portfolio
   return(portfolio) # Returns resaults 
@@ -680,8 +680,8 @@ filtered_reg_bot_sum = reg_bot_sum %>% dplyr::filter(date > from_date) %>% dplyr
 
 colors <- c("top" = "blue", "bot" = "orange")
 ggplot(filtered_reg_top_sum, aes(x = date)) + # Uses main dataset
-       geom_line(aes(y = beta_top, color = "top"), size = 0.5) +
-       geom_line(data = filtered_reg_bot_sum, aes(y = beta_bot, color = "bot"), size = 0.5) +
+       geom_line(aes(y = beta_top, color = "top"), size = 0.75) +
+       geom_line(data = filtered_reg_bot_sum, aes(y = beta_bot, color = "bot"), size = 0.75) +
        labs(x = 'Date',
        y = '6 month rolling log beta ',
        title = 'Top and bot betas') +
@@ -775,7 +775,7 @@ decompose_ts_top = diff(ts_top_ret, differences = 1)  # creating a first order d
 testing_ts(decompose_ts_top,6)
 lambda = BoxCox.lambda(decompose_ts_top)
 
-#auto.arima(decompose_ts_top,D=1, approximation = FALSE, lambda = lambda, parallel = TRUE, stepwise=FALSE, num.cores = 20 )
+#auto.arima(decompose_ts_top,D=1, approximation = FALSE, lambda = lambda, parallel = TRUE, stepwise=FALSE, num.cores = 30 )
 ```
 
 ```{r}
@@ -805,205 +805,403 @@ temp_sp500_rvol = month_ret_tot %>%  dplyr::select("sp500_vol","date") %>% arran
 
 row.names(temp_sp500_rvol) = temp_sp500_rvol$date
 row.names(temp_close_sp) = temp_close_sp$date
-row.names(temp_sp500) = temp_sp500$date
+row.names(temp_sp500_ret) = temp_sp500_ret$date
 
-temp_close_sp = temp_close_sp %>% dplyr::select(-c("date"))
-temp_sp500_ret = temp_sp500 %>% dplyr::select(-c("date"))
-temp_sp500_rvol = temp_sp500_rvol %>% dplyr::select(-c("date"))
+# temp_close_sp = temp_close_sp %>% dplyr::select(-c("date"))
+# temp_sp500_ret = temp_sp500 %>% dplyr::select(-c("date"))
+# temp_sp500_rvol = temp_sp500_rvol %>% dplyr::select(-c("date"))
 
-ts_sp500_close = ts(temp_close_sp, start = c(2005, 10), freq = 12) # closing prices
-ts_sp500_ret = ts(temp_sp500_ret, start = c(2005, 10), freq = 12) # returns  
-ts_sp500_rvol = ts(temp_sp500_rvol, start = c(2005, 10), freq = 12) # real volatility
+ts_sp500_close = ts(temp_close_sp[,1], start = c(2000, 10), freq = 12) # closing prices
+ts_sp500_ret = ts(temp_sp500_ret[,1], start = c(2000, 10), freq = 12) # returns  
+ts_sp500_rvol = ts(temp_sp500_rvol[,1], start = c(2000, 10), freq = 12) # real volatility
 ```
 
+
+<!-- ```{r} -->
+<!-- library(quantmod) -->
+<!-- library(xts) -->
+<!-- library(PerformanceAnalytics) -->
+<!-- library(rugarch) -->
+<!-- library(ggplot2) -->
+
+
+
+<!-- garch_sp500_spec = ugarchspec(mean.model = list(armaOrder = c(0,0)), -->
+<!--                    variance.model = list(model = "gjrGARCH"), -->
+<!--                    distribution.model = 'sstd') -->
+
+<!-- garch_sp500_fit_close = ugarchfit(garch_sp500_spec, ts_sp500_close) -->
+
+<!-- coef(garch_sp500_fit_close) -->
+<!-- #garch_top_model = ugarchfit(data = ts_sp500_ret, spec = garch_top_spec, cond.dist="std" ) -->
+
+<!-- vol_sp500_garch = ts(garch_sp500_fit_close@fit$sigma^2,start=c(2000,10),end=c(2010,12),frequency = 12) -->
+
+<!-- plot(vol_sp500_garch,xlab="",ylab="",main="garch_sp500_fit_close") -->
+
+<!-- plot(garch_sp500_fit_close, which = "all") -->
+
+<!-- x = sqrt(12) * garch_sp500_fit_close@fit$sigma -->
+<!-- plot(x,type="l") -->
+
+<!-- y = ts_sp500_rvol -->
+<!-- plot(y,type="l") -->
+
+<!-- #plot(merge(x,y), multi.panel = TRUE, type = "l") -->
+
+<!-- forcast_gjr_top = ugarchforecast(fitORspec = garch_sp500_fit_close, n.ahead = 12) -->
+<!-- forcast_gjr_top -->
+
+<!-- ############## NEW TEST GARCH ###################### -->
+
+<!-- plot(forcast_gjr_top, which = "all" ) -->
+<!-- #plot(garch_top_model) -->
+
+<!-- forcast_gjr_top = ugarchforecast(fitORspec = forcast_gjr_top, n.ahead = 12) -->
+
+<!-- plot(fitted(forcast_gjr_top)) -->
+<!-- plot(sigma(forcast_gjr_top)) # from this we know we will have higher predicted volatility -->
+
+<!-- x = sqrt(12)*sigma(forcast_gjr_top) -->
+
+<!-- an_volatility = 0.15 # 15% of anualized risk -->
+<!-- w = an_volatility/x # weights assigned to risky asset  -->
+
+<!-- plot(merge(x,w), multi.panel = TRUE) -->
+<!-- plot(x) -->
+<!-- plot(w) -->
+
+
+<!-- plot.zoo(fitted(sim)) -->
+<!-- plot.zoo(sigma(sim)) -->
+
+<!-- tail(ts_sp500_ret) -->
+
+<!-- p = 1.035186 * apply(fitted(sim),2,'cumsum') + 1.035186 # calculating the change in price -->
+<!-- matplot(p, type = "l", lwd = 3) -->
+<!-- ``` -->
+# ```{r}
+# mean_sp500 = mean(ts_sp500_ret)
+# errors = ts_sp500_ret - mean_sp500
+# 
+# par(mfrow = c(2,1),mar = c(3, 2, 2, 2)) # ??
+# plot(abs(errors))
+# 
+# plot(abs(e))
+# acf(abs(errors))
+# 
+# error2 = errors^2 
+# ```
 
 ```{r}
-library(quantmod)
-library(xts)
-library(PerformanceAnalytics)
 library(rugarch)
-library(ggplot2)
 
-garch_sp500_spec = ugarchspec(mean.model = list(armaOrder = c(0,0)),
-                   variance.model = list(model = "gjrGARCH"),
-                   distribution.model = 'sstd')
+temp_top_ret = month_ret_tot %>%  dplyr::select("ret_mont_top","date") %>% arrange(date)
+ts_temp_top_ret = ts(temp_top_ret[,1], start = c(2000, 10), freq = 12)
 
-ts_sp500_close = ts_sp500_close[1:40]
+#auto.arima(ts_temp_top_ret,D=1, approximation = FALSE, lambda = lambda, parallel = TRUE, stepwise=FALSE, num.cores = 20 )
 
-garch_sp500_fit_close = ugarchfit(garch_sp500_spec, ts_sp500_close)
+garchspec = ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                        variance.model = list(model = "gjrGARCH"), 
+                        distribution.model = "sstd")
 
-coef(garch_sp500_fit_close)
-#garch_top_model = ugarchfit(data = ts_sp500_ret, spec = garch_top_spec, cond.dist="std" )
+# Estimate the model
+garchfit = rugarch::ugarchfit(data = ts_temp_top_ret  , spec = garchspec)
 
-x = sqrt(12) * garch_sp500_fit_close@fit$sigma
-plot(x,type="l")
+# Use the method sigma to retrieve the estimated volatilities 
+garchvol = sigma(garchfit)
 
-y = ts_sp500_rvol[1:40]
-plot(y,type="l")
+# Plot the volatility for 2008
+plot(garchvol)
 
-#plot(merge(x,y), multi.panel = TRUE, type = "l")
+sqrt(uncvariance(garchfit))
 
-forcast_gjr_top = ugarchforecast(fitORspec = garch_sp500_fit_close, n.ahead = 12)
-forcast_gjr_top
-
-############## NEW TEST GARCH ######################
-
-plot(forcast_gjr_top, which = "all" )
-#plot(garch_top_model)
-
-forcast_gjr_top = ugarchforecast(fitORspec = forcast_gjr_top, n.ahead = 12)
-
-plot(fitted(forcast_gjr_top))
-plot(sigma(forcast_gjr_top)) # from this we know we will have higher predicted volatility
-
-x = sqrt(12)*sigma(forcast_gjr_top)
-
-an_volatility = 0.15 # 15% of anualized risk
-w = an_volatility/x # weights assigned to risky asset 
-
-plot(merge(x,w), multi.panel = TRUE)
-plot(x)
-plot(w)
-
-spec_final= garch_sp500_spec
-setfixed(spec_final) = as.list(coef(forcast_gjr_top))
-
-f2005 = ugarchforecast(data = ts_sp500_ret[1:32], 
-                       fitORspec = spec_final,
-                       n.ahead = 12)
-
-f2008 = ugarchforecast(data = ts_sp500_ret[36:48], 
-                       fitORspec = spec_final,
-                       n.ahead = 12)
-plot(sigma(f2005))
-
-sim = ugarchpath(spec = spec_final,
-                 m.sim = 3,
-                 n.sim = 12,
-                 rseed.=321)
-
-plot.zoo(fitted(sim))
-plot.zoo(sigma(sim))
-
-tail(ts_sp500_ret)
-
-p = 1.035186 * apply(fitted(sim),2,'cumsum') + 1.035186 # calculating the change in price
-matplot(p, type = "l", lwd = 3)
+devtools::unload("rugarch")
 ```
+
+# ```{r}
+# # da må vi gjøre det slik 
+# # Når den er under 2.14 går alt til top, ved økning til 3 legger man det til 
+# 
+# cumalative_ret_dynamic = function (portfolio,portfolio2, gjr_vol){ # Defining function
+#   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+#   tot_ret = c() # empty vector 
+#   vt_weights = vt_weights %>% as_tibble()
+#   start_value = 1 # as of 1 USD 
+#   top_start_val = start_value * vt_weights[1,1] #%>% as_tibble()
+#   #bot_start_val = start_value - top_start_val# %>% as_tibble()
+#   #bot_start_val = start_value * 1-vt_weights[1] 
+#     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+#       if (gjr_vol[i,1] >= 2.4){
+#         
+#       } 
+#       if (i == 1){  # First round do this 
+#         z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
+#         x = portfolio2 %>% dplyr::filter(reb_month[i] == portfolio2$date)
+#         ret_z = top_start_val[1,1] * (1+z$return) * z$vw  
+#         ret_x = bot_start_val[1,1] * (1+x$return) * x$vw
+#         tot_ret[i]  = sum(ret_z, ret_x) 
+#       }
+#       if (i > 1){ # When its beyond start date, (t+1). Do the following
+#         z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
+#         x = portfolio2 %>% dplyr::filter(reb_month[i] == portfolio2$date)
+#         ret_weights_z = vt_weights[i,1] * tot_ret[i-1] 
+#         ret_weights_x = 1-vt_weights[i,1] * tot_ret[i-1]
+#         ret_z = ret_weights_z[1,1] * z$vw * (1+z$return)  
+#         ret_x = ret_weights_x[1,1] * x$vw * (1+x$return)
+#         tot_ret[i]  = sum(ret_z, ret_x) # Sum it all up to reinvest 
+#     }
+#   }
+# return(tot_ret) #returns the calculations out of the loop
+# }
+# 
+# library(timetk)
+# 
+# top_2 = top_1 %>% dplyr::filter(date > "2008-10-01")
+# bot_2 = bot_1 %>% dplyr::filter(date > "2008-10-01")
+# garchvol1 = garchvol %>% as.data.frame()
+# garchvol1 = cbind(garchvol1, total_score)
+# colnames(garchvol1)[1] = "gjr_vol" 
+# garchvol1 = garchvol1 %>% dplyr::select(c("gjr_vol","date"))
+# garchvol1 = garchvol1 %>% dplyr::filter(date > "2008-10-01")
+# 
+# gjr_vol = garchvol1 
+# 
+# top_dynamic = cumalative_ret_dynamic(top_1,bot_1,garchvol1) # runs the script on top portfolio 
+# #mid_score = cumalative_ret_portfolio(mid) # runs on bot portf.
+# #bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
+# 
+# top_dynamic %>% plot(type = "line")
+# ```
+
+```{r}
+# da må vi gjøre det slik 
+# Når den er under 2.14 går alt til top, ved økning til 3 legger man det til 
+# portfolio = top_2
+# portfolio2 = bot_2
+# gjr_vol = garchvol1
+
+cumalative_ret_dynamic = function (portfolio,portfolio2, gjr_vol){ # Defining function
+  reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
+  tot_ret = c() # empty vector 
+  border = 2.2
+    for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
+      if (i == 1){ 
+        if (gjr_vol[i,1] >= border){
+          x = portfolio2 %>% dplyr::filter(reb_month[i] == portfolio2$date)
+          ret_x = (1+x$return) * x$vw
+          tot_ret[i] = sum(ret_x)
+        } 
+        else {
+          z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date)
+          ret_z = (1+z$return) * z$vw
+          tot_ret[i] = sum(ret_z)
+              }
+                }
+      if (i > 1){ 
+          if (gjr_vol[i,1] <= border){
+            x = portfolio2 %>% dplyr::filter(reb_month[i] == portfolio2$date)
+            ret_x = tot_ret[i-1] * (1+x$return) * x$vw
+            tot_ret[i] = sum(ret_x)
+          }
+          else{
+            z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date)
+            ret_z = tot_ret[i-1] * (1+z$return) * z$vw
+            tot_ret[i] = sum(ret_z)
+          }
+        }
+    }
+  return(tot_ret) #returns the calculations out of the loop
+  }
+
+
+top_2 = top_1 %>% dplyr::filter(date > "2000-10-01")
+bot_2 = bot_1 %>% dplyr::filter(date > "2000-10-01")
+garchvol1 = garchvol %>% as.data.frame()
+garchvol1 = cbind(garchvol1, total_score)
+colnames(garchvol1)[1] = "gjr_vol" 
+rownames(garchvol1)=NULL
+garchvol1 = garchvol1 %>% arrange(date) %>% dplyr::select(c("gjr_vol","date"))
+garchvol1 = garchvol1 %>% dplyr::filter(date > "2000-10-01")
+
+top_dynamic = cumalative_ret_dynamic(top_1,bot_1,garchvol1) # runs the script on top portfolio 
+#mid_score = cumalative_ret_portfolio(mid) # runs on bot portf.
+#bot_score = cumalative_ret_portfolio(bot) # runs on bot portf.
+
+top_dynamic %>% plot(type = "l")
+
+arrange(total_score,date)
+tot_score_final = cbind(total_score, top_dynamic)
+
+tot_score_final %>% tail()
+
+
+```
+
+```{r}
+colors = c("top" = "blue", "bot" = "orange", "dynamic" = "green", " cu_ff_mkt_rf" = "red", " sp500" = "black")
+
+ggplot(total_score, aes(x = date)) + # Uses main dataset
+       geom_line(aes(y = top, color = "top"), size = 1) +
+       geom_line(aes(y = bot, color = "bot"), size = 1) + 
+       geom_line(aes(y = top_dynamic, color = "green"), size = 1) + 
+       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
+       labs(x = 'Date',
+       y = 'Cumulative Returns',
+       title = 'Portfolio Cumulative Returns') +
+    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_x_date(date_breaks = '5 year',
+               date_labels = '%Y') +
+    scale_color_manual(values = colors)
+```
+
+################
+################ Works to down here. Cant get dynamic to work like it should.
+################
+
+
 
 ```{r}
 library(parallel)
+
+#temp_top_ret = month_ret_tot %>%  dplyr::select("ret_mont_top","date") %>% arrange(date)
+#ts_temp_top_ret = ts(temp_top_ret[,1], start = c(2000, 10), freq = 12)
+
+temp_top_ret = month_ret_tot %>%  dplyr::select("ret_mont_top","date") %>% arrange(date)
+#temp_top_ret = temp_top_ret[,1] / 100
+ts_temp_top_ret = ts(temp_top_ret[1:100,1] /100, start = c(2000, 10), freq = 12)
+
+temp_norm_top_ret = month_ret_tot %>%  dplyr::select("norm_ret_mont_top","date") %>% arrange(date)
+temp_norm_top_ret = temp_norm_top_ret %>% log()
+temp_norm_top_ret = ts(temp_norm_top_ret[1:100,1] /100, start = c(2000, 10), freq = 12)
+
+
+
+garchspec = ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                       variance.model = list(model = "gjrGARCH"),
+                       garchOrder = c(1,1),
+                       distribution.model = "sstd")
+
 cl = makePSOCKcluster(25)
 
-spec = garch_sp500_spec
-
-ugarch_roll = ugarchroll(spec, garch_sp500_spec, 
-                  refit.every = 6, 
-                  forecast.length = 12, 
-                  refit.window = "moving", 
-                  solver = "hybrid", 
-                  calculate.VaR = FALSE, 
-                  solver.control = list(tol = 1e-12), 
-                  VaR.alpha = c(0.01, 0.05, 0.1, 0.15), 
-                  cluster = cl, 
-                  keep.coef = TRUE
-                  )
+ugarch_roll = rugarch::ugarchroll(spec = garchspec, # garchspec model 
+                                  data = temp_norm_top_ret, #inn data 
+                                  n.start = 1, # when to start wtesting
+                                  forecast.length = 1, #how far to forcast ( idealy this should be a trading month in days.) But we have 1 month instead
+                                  refit.every = 6, # How often to refit (6 months is from the paper (or 126 trading days))
+                                  refit.window = "moving", # Moving window to test 
+                                  solver = "hybrid",  # Solver to use 
+                                  calculate.VaR = TRUE,  # Calculate Value at risk or not 
+                                  solver.control = list(tol = 1e-12),   # Solver controll 
+                                  VaR.alpha = 0.19,  # 19 % var from paper 
+                                  cluster = cl,  # initates cluster computing
+                                  keep.coef = TRUE # keeping the coeficients 
+                                  )
 
 show(ugarch_roll)
 stopCluster(cl)
 plot(ugarch_roll)
+
+# nå kjører vi regresion mellom kalkulert volatility og GJR volatility
+
+
+predic = as.data.frame(ugarch_roll)
+
+sigma_reg = lm(predic$Sigma ~  temp_norm_top_ret )
+
+
+
+month_ret_tot$top_vol[61:nrow(month_ret_tot)] %>% plot(type = "l")
+
+#ff_reg = lm(return_wml_reg ~  ff_mkt_rf + ff_smb + ff_hml, data = total_score)
+weights_pred = lm(predic$Realized ~  predic$Sigma)
+
+error = predic$Realized - predic$Mu
+div = error ^ 2 - predic$Sigma ^ 2
+mean(div^2)
 
 x = sqrt(12)*ugarch_roll@forecast$density$Sigma
 
 an_volatility = 0.15 # 15% of anualized risk
 w = an_volatility/x # weights assigned to risky asset 
 
-plot(merge(x,w), multi.panel = 2)
+plot(x, type = "l")
 
-ts_spp = 1.035186 * apply(fitted(sim),2,'cumsum') + 1.035186 # calculating the change in price
-matplot(p, type = "l", lwd = 3)
+#ts_spp = 1.035186 * apply(fitted(sim),2,'cumsum') + 1.035186 # calculating the change in price
+#matplot(p, type = "l", lwd = 3)
+
+report(ugarch_roll, typ = "VaR", VaR.alpha = 0.19, conf.level = 0.99)
 ```
-
-
-
-```{r, investigating timeseries bot}
-testing_ts(ts_bot_ret,6)
-```
-
-```{r, Garch model}
-library(fGarch)
-library(forecast)
-
-plot(ts_df)
-plot(ts_df^2)
-
-acf(ts_df, lag.max=30)
-adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
-pacf(ts_df)
-
-
-Lambda = BoxCox.lambda(ts_df)
-#auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
-
-#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
-#garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
-#summary(garch_df)
-#plot((garch.fit))
-
-#garch.fit@residuals%>% plot(type = "l")
-#devtools::unload("forecast")
-#devtools::unload("fGarch")
-#devtools::unload("aTSA")
-```
-
 
 ```{r}
-ts_garch = ts_df %>% as.data.frame()
+library(fGarch)
+
+Fit01 =  garchFit(~ garch(1,1), data=temp_norm_top_ret, cond.dist="norm", include.mean = FALSE, trace = FALSE)
+Fit01
+
+Fit01@fit$ics
+
+res1  = ts_temp_top_ret/Fit01@sigma.t  
+
+plot(ts_temp_top_ret)
+plot(Fit01@sigma.t, type="l") 
+
+ts_1_temp_top_ret = ts_temp_top_ret %>% as.xts()
+
+sigma.upper = xts(1.96*Fit01@sigma.t, order.by=index(ts_1_temp_top_ret))
+sigma.lower = xts(-1.96*Fit01@sigma.t, order.by=index(ts_1_temp_top_ret))
+    
+plot( cbind(ts_temp_top_ret, sigma.upper, sigma.lower),
+    col=c("black", "red", "red"), lwd=c(2,1,1) )
+
+plot(  as.numeric(ts_1_temp_top_ret["2000::"]), type="h", lwd=2)
+lines( as.numeric(sigma.upper["2000::"]), col="red")
+lines( as.numeric(sigma.lower["2000::"]), col="red")
+```
+
+# ```{r}
+# library(Hmisc)
+# # en timeseries frem til 2008
+#
+# temp_top_ret = month_ret_tot %>%  dplyr::select("ret_mont_top","date") %>% arrange(date)
+# #temp_top_ret = temp_top_ret[,1] / 100
+# ts_temp_top_ret = ts(temp_top_ret[1:80,1] /100, start = c(2000, 10), freq = 12)
+#
+# # Så fitter man modellen til en GJR modell, lektyren anbefaler 1,1 garch
+#
+# garch_sp500_spec = ugarchspec(mean.model = list(armaOrder = c(0,0)),
+#                    variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)),
+#                    distribution.model = 'sstd')
+#
+# garch_top_fit_close = ugarchfit(garch_sp500_spec, temp_norm_top_ret)
+#
+# # Så gjør vi bare det i 2008 på predictions
+# forcast_gjr_top = ugarchforecast(fitORspec = garch_top_fit_close, n.ahead = 12)
+#
+# mu. <- fitted(garch_top_fit_close)
+# sig. <- sigma(garch_top_fit_close)
+#
+#
+# # Plot forecast
+# plot(forcast_gjr_top, which=1)
+# plot(forcast_gjr_top, which=3)
+#
+#
+# #jo Høyere volatility predcition jo høyere investering MEN BARE I NEDE TIDEN
+# forcast_gjr_top %>% plot()
+# ```
+
+
+# ```{r, investigating timeseries bot}
+# testing_ts(ts_bot_ret,6)
+# ```
+
+```{r}
+# ts_garch = ts_df %>% as.data.frame()
 # ts_garch = df %>% dplyr::filter(quantile == 10)
 # ts_garch = cbind(ts_test, ts_garch)
 ```
 
-
-```{r}
-library(fGarch)
-library(aTSA)
-library(forecast)
-
-# Is this Weights ??? What are these things?? 
-
-ts_totscore = total_score$top
-
-# ts_df = ts(log(df$return+1), start = c(2000, 10), freq = 12)
-# plot(ts_df^2)
-
-ts_df = ts(log(ts_totscore), start = c(2005, 1), freq = 12)
-plot(ts_df)
-plot(ts_df^2)
-
-acf(ts_df, lag.max=30)
-adf.test(ts_df) # p-value > 0 .05 therefor we reject the hypothesis that it is nonstationary. Therefor it is stationary.
-pacf(ts_df)
-
-
-Lambda = BoxCox.lambda(ts_df)
-auto.arima(ts_df,D=1, approximation = FALSE, lambda = Lambda)
-
-#garch.fit <- garchFit(formula = ~arma(5,0)+garch(1,1), data = ts_df)
-garch_df = fGarch::garchFit(ts_df ~ garch(1, 1), data = ts_df, trace = F)
-summary(garch_df)
-plot(garch_df)
-
-garch_df@residuals %>% plot(type = "l")
-#devtools::unload("forecast")
-#devtools::unload("fGarch")
-#devtools::unload("aTSA")
-```
-
-```{r}
-#ts_garch = ts_df %>% as.data.frame()
-# ts_garch = df %>% dplyr::filter(quantile == 10)
-##ts_garch = cbind(ts_test, ts_garch)
-```
 
 ## Chris stuff ------------------------------------------------- IDK what this is???
 
