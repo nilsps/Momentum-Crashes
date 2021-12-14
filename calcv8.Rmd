@@ -1,17 +1,18 @@
 ---
 title: "Momentum Crashes"
 output:
+  pdf_document: default
+  'html_document:': defaultv
   html_document: default
-  'html_document:': default
-editor_options: 
-  chunk_output_type: console
+editor_options:
+  chunk_output_type: inline
 ---
 
 #
 # NOTE TO READER 
 # 
 # This dataset has survivorship biases in it! As we we dont take into considiration when stocks are leaving or not
-# Additionaly due to the date (2000+) top performs very well due to the bounce back from the momentum crash of the dotcom bubble! 
+# Additionaly due to the date (2000+) bot performs very well due to the bounce back from the momentum crash of the dotcom bubble! 
 # I chose to hold it there so we could see it
 
 ```{r setup, include=FALSE}
