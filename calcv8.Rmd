@@ -415,7 +415,7 @@ sum(dfx$vw) # OK if it sums to one
 ##
 scores = function (portfolio, parent_portfolio){ # makes function
   portfolio = portfolio %>% as_tibble() # converts the score into a tibble for easier processing 
-  (portfolio)[1] = "cum_rets"  # Rename the cumalative returns 
+  colnames(portfolio)[1] = "cum_rets"  # Rename the cumalative returns 
   dates = parent_portfolio$date  %>% as.Date() %>% unique() # Find the dates from the parent calulations (pre last function)
   portfolio$date  =  dates  # takes the dates and put them into tbe portfolio
   return(portfolio) # Returns resaults 
@@ -932,6 +932,45 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
     scale_color_manual(values = colors)
 ```
 
+```{r}
+
+x = cbind(month_ret_tot$date,month_ret_tot$ret_mont_top) %>% as.data.frame()
+x$V1 = x$V1 %>% as.Date()
+x = x %>% arrange(V1)
+y = x$V2 
+
+
+x$norm_sp = (y-min(y))/(max(y)-min(y)) 
+#SP.wml = SP.wml[3]
+
+#x = x %>% arrange(V1)
+row.names(x) = x$V1
+
+
+#sp_test = cbind(SP.wml, DAXConst$X)
+#rownames(sp_test) = sp_test[[2]]
+#sp_test = sp_test[1:1]
+x = x#[72:nrow(x),]
+ts_sp_test = ts(x[3], start = c(2000,10), frequency = 12 )
+
+garchspec <- ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")
+
+cl = makePSOCKcluster(25)
+
+gjrgarchroll <- ugarchroll(garchspec, data = ts_sp_test, n.start = 12,
+                        refit.window = "moving", 
+                        refit.every = 6,
+                        cluster = cl,)  # initates cluster computing)
+show(ugarch_roll)
+stopCluster(cl)
+plot(ugarch_roll)
+
+garchfit <- ugarchfit(data = ts_sp_test, spec = garchspec)
+round(coef(garchfit)[1:2], 4)
+plot(fitted(garchfit))
+```
+
+
 ################
 ################ Works to down here. Cant get dynamic to work like it should.
 ################
@@ -1156,9 +1195,6 @@ wml_chris$weights_forcast
 #   #bot_start_val = start_value - top_start_val# %>% as_tibble()
 #   #bot_start_val = start_value * 1-vt_weights[1] 
 #     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
-#       if (gjr_vol[i,1] >= 2.4){
-#         
-#       } 
 #       if (i == 1){  # First round do this 
 #         z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest
 #         x = portfolio2 %>% dplyr::filter(reb_month[i] == portfolio2$date)

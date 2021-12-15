@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
 output: html_notebook
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r}
@@ -24,50 +26,156 @@ names(df)[1]  = "symbol"
 names(df)[2] = "date" 
 
 df$date = df$date %>% as.Date() 
-month_day = LastDayInMonth(df$date) %>% as.Date()
-
-df = dplyr::filter(df, date == month_day) 
+#month_day = LastDayInMonth(df$date) %>% as.Date()
+df = dplyr::filter(df,symbol == "IBM")
+#df = dplyr::filter(df, date == month_day) 
 
 df[is.na(df)] = 0
 
 #df = df %>% dplyr::filter(adjusted > 0) # DF needs positiv sales prices, 
 df = df %>% dplyr::filter(close != 0) # Same as above 
 
+
 df = df %>% dplyr::select("symbol", "date", "close") # Select the cols we need for the research
 
 #Sticking with relativly "fresh" stocks, as older periods often have alot of NAs and holes in them.
-df = df %>% dplyr::filter(date > "2005-01-01") 
+df = df %>% dplyr::filter(date > "1979-12-31") 
+
+# fil_funk = function(df) {
+#   df = df %>% dplyr::filter(date >= "1980-01-01")
+#   return(df)
+# }
+# mclapply(df, fil_funk, mc.cores = 30)
 
 # These stocks are removed due to wierd data. in total_df
-unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
+#unwanted = c("TOPS", "CEI", "OSAT", "INPX", "ABIO", "NUWE", "NSPR")
   
-df = dplyr::filter(df, !symbol %in% unwanted)
+#df = dplyr::filter(df, !symbol %in% unwanted)
 
 #sp500_df = NULL
 
-unwanted = NULL
-month_day = NULL
+#unwanted = NULL
+#month_day = NULL
 ```
 
 
 ```{r}
-##
-## Cleaning some data, removing some dates
-##
-df$date =  as.Date(df$date, format = '%d.%m.%Y')
+df = dplyr::filter(df,symbol == "IBM")
+df = df[2:3]
+df = df %>% arrange(date)
+df$ret = ((lead(df$close) - df$close)  / df$close)
 
-df = dplyr::filter(df, date > "2005-12-31")
+df = df %>% na.omit()
 
-df = df %>% dplyr::filter(close != 0) #%>% dplyr::filter(mcap != 0) %>% dplyr::select(-(tot_ret))
+#df = df %>% dplyr::filter(date < "1981-01-01")
+ts_df = ts(log(df[,3]+1), start = decimal_date(as.Date("1980-01-02")), freq = 253)
 
-transform(df, date = bsts::LastDayInMonth(df$date))
+#ts_df_test = ts_df %>% as.xts()
 
-df = df %>% group_by(symbol) %>% arrange(date) 
+x$norm_sp = (y-min(y))/(max(y)-min(y)) 
+#SP.wml = SP.wml[3]
 
-devtools::unload("bsts")
-devtools::unload("readr")
+#x = x %>% arrange(V1)
+row.names(x) = x$V1
 
+
+#sp_test = cbind(SP.wml, DAXConst$X)
+#rownames(sp_test) = sp_test[[2]]
+#sp_test = sp_test[1:1]
+# x = x#[72:nrow(x),]
+# ts_sp_test = ts(log(x[3]+1), start = c(1980), frequency = 253)
+# 
+
+library(rugarch)
+garchspec <- ugarchspec(variance.model = list(model = "gjrGARCH", 
+                                              garchOrder = c(1, 1)), 
+                                              distribution.model = "std")
+
+#garchFit(ts_df ~ garch(1, 1), data = ts_df, cond.dist = "std", trace = F)
+
+garch_ibm_close = ugarchfit(garchspec, ts_df)
+
+plot(garch_ibm_close)
+forcast = ugarchforecast(fitORspec = garch_ibm_close, n.ahead = 22, n.roll = 0)
+
+
+forcast %>% plot()
+
+cl = makePSOCKcluster(30)
+
+boot_pred = 500
+boot_fit = 100
+seed = rnorm((boot_pred+boot_fit), mean= 10, sd =10) %>% round(digits = 0)
+seed = seed +1
+
+ugarch_boot = function(){
+  rugarch::ugarchboot(fitORspec =  garch_ibm_close,
+                      method = "full", 
+                      sampling = "kernel", 
+                      n.ahead = 22, 
+                      n.bootfit = boot_fit, 
+                      n.bootpred = boot_pred, 
+                      out.sample = 0, 
+                      rseed = seed, 
+                      solver = "solnp", 
+                      cluster = cl, 
+                      verbose = TRUE)
+}
+show(ugarch_boot)
+ugarch_boot %>% plot()
+stopCluster(cl)
+
+test = as.data.frame(ugarch_boot, which = "sigma", type = "q", qtile = c(0.01, 0.05))
+
+cl = makePSOCKcluster(30)
+
+forcast_l = length(ts_df)
+ugarch_roll = rugarch::ugarchroll(spec = garchspec, # garchspec model 
+                                  data = ts_df, #inn data 
+                                  #n.start = 1, # when to start wtesting
+                                  forecast.length = forcast_l, #how far to forcast ( idealy this should be a trading month in days.) But we have 1 month instead
+                                  #refit.every = 126, # How often to refit (6 months is from the paper (or 126 trading days))
+                                  moving.size = 22,
+                                  window.size = 126,
+                                  refit.window = "moving", # Moving window to test 
+                                  solver = "hybrid",  # Solver to use 
+                                  calculate.VaR = TRUE,  # Calculate Value at risk or not 
+                                  solver.control = list(tol = 1e-12),   # Solver controll 
+                                  VaR.alpha = 0.19,  # 19 % var from paper 
+                                  cluster = cl,  # initates cluster computing
+                                  keep.coef = TRUE # keeping the coeficients 
+                                  )
+
+show(ugarch_roll)
+stopCluster(cl)
+plot(ugarch_roll)
+
+# g_roll = function(garch_spec){
+#   x = predict(garch_spec, n.ahead = 22, mse = c("cond"),
+#         plot=TRUE, nx=NULL, crit_val=NULL, conf=NULL)
+#   return(x)
+# }
+# 
+# m4 <- garchFit(ts_df ~ garch(1, 1), data = ts_df, cond.dist = "std", trace = F)
+# 
+# garchSim(spec = garchSpec(), n = 100, n.start = 100, extended = FALSE)
+# 
+# ibm_test = rollapply(data=ts_df[,3], 
+#                      FUN=g_roll, 
+#                      width= 126,
+#                      by = 1, 
+#                      align = "right", 
+#                      by.column=FALSE)
+
+show(ugarch_roll)
+stopCluster(cl)
+plot(ugarch_roll)
+
+garchfit <- ugarchfit(data = ts_sp_test, spec = garchspec)
+round(coef(garchfit)[1:2], 4)
+plot(fitted(garchfit))
 ```
+
 
 
 
