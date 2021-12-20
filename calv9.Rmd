@@ -63,20 +63,25 @@ df = df %>% dplyr::filter(date > "1979-12-31")
 df = dplyr::filter(df,symbol == "IBM")
 df = df[2:3]
 df = df %>% arrange(date)
-df$ret = ((lead(df$close) - df$close)  / df$close)
+df$ret = 1+((lead(df$close) - df$close)  / df$close)
 
-df = df %>% na.omit()
+df = df %>% na.omit() # Removes the last redundant row
+
+df = df %>% arrange(date)
+row.names(df) = df$date
+y = df$ret
+df$norm_sp = (y-min(y))/(max(y)-min(y)) 
 
 #df = df %>% dplyr::filter(date < "1981-01-01")
-ts_df = ts(log(df[,3]+1), start = decimal_date(as.Date("1980-01-02")), freq = 253)
+ts_df = ts(df[,4], start = decimal_date(as.Date("1980-01-02")), freq = 253)
 
 #ts_df_test = ts_df %>% as.xts()
 
-x$norm_sp = (y-min(y))/(max(y)-min(y)) 
+#x$norm_sp = (y-min(y))/(max(y)-min(y)) 
 #SP.wml = SP.wml[3]
 
-#x = x %>% arrange(V1)
-row.names(x) = x$V1
+# x = x %>% arrange(V1)
+# row.names(x) = x$V1
 
 
 #sp_test = cbind(SP.wml, DAXConst$X)
@@ -87,49 +92,105 @@ row.names(x) = x$V1
 # 
 
 library(rugarch)
-garchspec <- ugarchspec(variance.model = list(model = "gjrGARCH", 
-                                              garchOrder = c(1, 1)), 
-                                              distribution.model = "std")
 
 #garchFit(ts_df ~ garch(1, 1), data = ts_df, cond.dist = "std", trace = F)
 
-garch_ibm_close = ugarchfit(garchspec, ts_df)
-
-plot(garch_ibm_close)
-forcast = ugarchforecast(fitORspec = garch_ibm_close, n.ahead = 22, n.roll = 0)
 
 
-forcast %>% plot()
 
-cl = makePSOCKcluster(30)
+#garch_ibm_close = ugarchfit(garchspec, ts_df)
 
-boot_pred = 500
-boot_fit = 100
-seed = rnorm((boot_pred+boot_fit), mean= 10, sd =10) %>% round(digits = 0)
-seed = seed +1
+#plot(garch_ibm_close)
+#forcast = ugarchforecast(fitORspec = garch_ibm_close, n.ahead = 22, n.roll = 0)
+#forcast %>% plot()
 
-ugarch_boot = function(){
-  rugarch::ugarchboot(fitORspec =  garch_ibm_close,
-                      method = "full", 
-                      sampling = "kernel", 
-                      n.ahead = 22, 
-                      n.bootfit = boot_fit, 
-                      n.bootpred = boot_pred, 
-                      out.sample = 0, 
-                      rseed = seed, 
-                      solver = "solnp", 
-                      cluster = cl, 
-                      verbose = TRUE)
+#garch_ibm_close = ugarchfit(garchspec, ts_df)
+
+df_2 = df %>% dplyr::filter(norm_sp != 0) %>% dplyr::filter(norm_sp != 1)
+
+ts_df = ts((df_2[,4]), start = decimal_date(as.Date("1980-01-02")), freq = 253)
+
+ru_roll = function(timeseries){
+  #cores = detectCores() - 2  
+  #cl = makePSOCKcluster(cores)
+  cl = makePSOCKcluster(32-2) #Computer core specific, always leave a few cores so R does not crash your pc 
+  garchspec = ugarchspec(variance.model = list(model = "gjrGARCH", 
+                                              garchOrder = c(1, 1)), 
+                                              distribution.model = "std")
+  boot_pred = 500
+  boot_fit = 500
+  seed = rnorm((boot_pred+boot_fit), mean= 100, sd =50) %>% round(digits = 0) %>% abs()
+  seed =  seed + 1 # Just to avoid seed is not 0 ! 
+  ru_boot = NULL 
+  x = NULL %>% as_tibble
+  runs = 10
+  count = 0
+  pb = txtProgressBar(min = 0, max = runs, initial = 0, style = 3)
+  flag = integer()
+      for (i in 1:runs){
+              #m2 = 126*i
+                if(i == 1){
+                  m1 = 1
+                  m2 = 126
+                 }
+                else {
+                 m1 = 1+(22*(i-1))
+                 m2 = 126 + (22*(i-1))
+                }
+                #timeseries = ts_df[1:126]
+                data = timeseries[m1:m2]
+                garch_ibm_close = ugarchfit(garchspec, data)
+                ru_boot =  rugarch::ugarchboot(fitORspec = garch_ibm_close,
+                          method = "full", 
+                          sampling = "kernel", 
+                          n.ahead = 22, 
+                          n.bootfit = boot_fit, 
+                          n.bootpred = boot_pred,
+                          #out.sample = 7, 
+                          rseed = seed, 
+                          solver = "hybrid", 
+                          cluster = cl, 
+                          verbose = FALSE)
+                if (i == 1) {
+                x = ru_boot@forc@forecast$sigmaFor %>% as_tibble()
+                }
+                else {
+                x = rbind(x, ru_boot@forc@forecast$sigmaFor)
+                }
+              tryCatch  
+              count = count + 1 # Adds 1 to the counter for progressbar 
+              setTxtProgressBar(pb,count) # Starting the progress bar
+              }
+  stopCluster(cl)
+return(x)
 }
+
+x = ru_roll(ts_df)
+x %>% plot()
+#library(zoo)
+
+rolling_boot = function(data_set){ 
+  
+  rolling_garch = rollapply(data=data_set, 
+                            FUN=ru_roll,  
+                            width = 126, 
+                            align = "right", 
+                            by.column=FALSE)
+  return(rolling_garch)
+}
+
+#cl = makePSOCKcluster(32-2)
+df = rolling_boot(ts_df[1:150])
+
 show(ugarch_boot)
-ugarch_boot %>% plot()
-stopCluster(cl)
+ru_roll %>% plot()
+
 
 test = as.data.frame(ugarch_boot, which = "sigma", type = "q", qtile = c(0.01, 0.05))
 
 cl = makePSOCKcluster(30)
-
 forcast_l = length(ts_df)
+
 ugarch_roll = rugarch::ugarchroll(spec = garchspec, # garchspec model 
                                   data = ts_df, #inn data 
                                   #n.start = 1, # when to start wtesting
