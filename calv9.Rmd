@@ -117,8 +117,8 @@ ru_roll = function(timeseries){
   garchspec = ugarchspec(variance.model = list(model = "gjrGARCH", 
                                               garchOrder = c(1, 1)), 
                                               distribution.model = "std")
-  boot_pred = 500
-  boot_fit = 500
+  boot_pred = 10
+  boot_fit = 10
   seed = rnorm((boot_pred+boot_fit), mean= 100, sd =50) %>% round(digits = 0) %>% abs()
   seed =  seed + 1 # Just to avoid seed is not 0 ! 
   ru_boot = NULL 
@@ -126,16 +126,16 @@ ru_roll = function(timeseries){
   runs = 10
   count = 0
   pb = txtProgressBar(min = 0, max = runs, initial = 0, style = 3)
-  flag = integer()
+  #tryCatch({
       for (i in 1:runs){
-              #m2 = 126*i
+              loadError = F 
                 if(i == 1){
                   m1 = 1
                   m2 = 126
                  }
                 else {
-                 m1 = 1+(22*(i-1))
-                 m2 = 126 + (22*(i-1))
+                 m1 = 1+i#(22*(i-1))
+                 m2 = 126 + i # + (22*(i-1))
                 }
                 #timeseries = ts_df[1:126]
                 data = timeseries[m1:m2]
@@ -143,6 +143,7 @@ ru_roll = function(timeseries){
                 ru_boot =  rugarch::ugarchboot(fitORspec = garch_ibm_close,
                           method = "full", 
                           sampling = "kernel", 
+                          solver.control = list(tol = 1e-12),
                           n.ahead = 22, 
                           n.bootfit = boot_fit, 
                           n.bootpred = boot_pred,
@@ -157,10 +158,13 @@ ru_roll = function(timeseries){
                 else {
                 x = rbind(x, ru_boot@forc@forecast$sigmaFor)
                 }
-              tryCatch  
+              #error = tryCatch({i+1}, error = function(e) {next})  
               count = count + 1 # Adds 1 to the counter for progressbar 
               setTxtProgressBar(pb,count) # Starting the progress bar
-              }
+      }
+  #}, error=function(e) i <<- i+1 )
+    #print(paste("error in rugarch")) 
+  
   stopCluster(cl)
 return(x)
 }

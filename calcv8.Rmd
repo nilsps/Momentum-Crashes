@@ -86,6 +86,9 @@ df = return_calculations(df) # Runs function
 df = df %>% dplyr::filter(date < "2021-10-01") # Last calculations does not have anything above to calculate return from, therefor rem. 
 ```
 
+
+
+
 ```{r, 2:12 month return to messure momentum}
 # This creates 2:12 cols, these cols will tell you if you sold an asset today, how much would you gain since you bought it 
 
@@ -1022,8 +1025,6 @@ plot(ugarch_roll)
 predic = as.data.frame(ugarch_roll)
 
 sigma_reg = lm(predic$Sigma ~  temp_norm_top_ret )
-
-
 
 month_ret_tot$top_vol[61:nrow(month_ret_tot)] %>% plot(type = "l")
 
