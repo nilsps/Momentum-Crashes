@@ -310,7 +310,8 @@ sp500$cum_ret = cumprod(1 + sp500$return) # Create cumalative returns based on t
 sp500 = sp500 %>% dplyr::filter(cum_ret != 0) %>% dplyr::filter(cum_ret != 1) # cannot have 0 or 1 in cumalative return 
 # This is due to how we calculate returns, as first month does not have returns to calculate from 
 
-devtools::unload("bsts") #pack unload
+devtools::unload("bsts") 
+devtools::unload("openair")
 ```
 
 ```{r, cumalative returns for each portfolio calc, warning = FALSE}
@@ -517,17 +518,16 @@ total_score = merge(total_score, sp500_dates2, by.x="date", by.y="date")
 
 ```{r, graphing the end returns}
 # Visualization of the scores 
-colors <- c("top" = "blue", "mid" = "red", "bot" = "orange", "wml" = "green" , " ff_mkt_rf" = "pink", " ff_rf" = "black")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , "sp500" = "red")
 # This top part is just to have a nice legend on the side of the graph 
 
 total_score$date = total_score$date %>% as.Date()  # Make sure dates are DATES ! 
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
-       #geom_line(aes(y = mid, color = "mid" ), size = 1) + 
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "black"), size = 1)+
+       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
@@ -653,7 +653,7 @@ month_ret_tot$norm_ret_mont_top = as.numeric(as.character(unlist(month_ret_tot$n
 month_ret_tot$norm_ret_mont_bot = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_bot))) # Or else we have problems regressing
 month_ret_tot$norm_sp500_ret = as.numeric(as.character(unlist(month_ret_tot$norm_sp500_ret)))
 
-month_ret_tot[sapply(month_ret_tot, is.infinite)] = 0.99999 # Dummy encoding since log cant be 0 or 1 we do this 
+month_ret_tot[sapply(month_ret_tot, is.infinite)] = 0.99999 # Dummy encoding since log cant be 0 or 1 we convert to dummy vars 
 month_ret_tot[month_ret_tot == 0] <- 0.000001 # Dummy encoding
 month_ret_tot[month_ret_tot == 1] <- 0.999999 # Dummy encoding
 
@@ -856,11 +856,10 @@ devtools::unload("rugarch") # Dropping the pack
 ```{r, cumalative dynamic portfolio}
 #Here we we run for each month, if the volatility is higher then 2.22 we invest in bot portfolio and not top, then we take those returns 
 #next month and we reinvest them in another portfolio (rebalancing )
-
 cumalative_ret_dynamic = function (portfolio,portfolio2, gjr_vol){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   tot_ret = c() # empty vector 
-  border = 2.22 # Selecting our volitility cap 
+  border = 0 # Selecting our volitility cap 
     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
       if (i == 1){  
         if (gjr_vol[i,1] >= border){ # High volatility invest in bot portfolio 
@@ -890,23 +889,24 @@ cumalative_ret_dynamic = function (portfolio,portfolio2, gjr_vol){ # Defining fu
   return(tot_ret) #returns the calculations out of the loop
   }
 
+start_date = "2000-10-01"
 
-top_2 = top_1 %>% dplyr::filter(date > "2000-10-01") # Date selection of portfolio is just here for testing 
-bot_2 = bot_1 %>% dplyr::filter(date > "2000-10-01")
+top_2 = top_1 %>% dplyr::filter(date > start_date ) # Date selection of portfolio is just here for testing 
+bot_2 = bot_1 %>% dplyr::filter(date > start_date)
 garchvol1 = garchvol %>% as.data.frame() # This is just fitting the garchvol to our dataset 
 garchvol1 = cbind(garchvol1, total_score) 
 colnames(garchvol1)[1] = "gjr_vol" 
 rownames(garchvol1)=NULL
 garchvol1 = garchvol1 %>% arrange(date) %>% dplyr::select(c("gjr_vol","date"))
-garchvol1 = garchvol1 %>% dplyr::filter(date > "2000-10-01")
+garchvol1 = garchvol1 %>% dplyr::filter(date > start_date)
 
-top_dynamic = cumalative_ret_dynamic(top_1,bot_1,garchvol1) # runs the script
+dynamic = cumalative_ret_dynamic(top_2,bot_2,garchvol1) # runs the script
 
 
-top_dynamic %>% plot(type = "l") # fast plot to see outcome 
+dynamic %>% plot(type = "l") # fast plot to see outcome 
 
 arrange(total_score,date) # Just making sure dates are in order before we move dynamic resaults into date 
-tot_score_final = cbind(total_score, top_dynamic) # binding it to our main table 
+tot_score_final = cbind(total_score, dynamic) # binding it to our main table 
 
 tot_score_final %>% tail() # Checking data 
 ```
@@ -920,10 +920,10 @@ Another finding is how "hard" the "dynamic" droped in 2009 as it would have high
 ```{r}
 colors = c("top" = "blue", "bot" = "orange", "dynamic" = "green", "sp500" = "red", "USREC" = "purple")
 
-ggplot(total_score, aes(x = date)) + # Uses main dataset
+ggplot(tot_score_final, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
-       geom_line(aes(y = top_dynamic, color = "dynamic"), size = 1) + 
+       geom_line(aes(y = dynamic, color = "dynamic"), size = 1) + 
        geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
         geom_line(aes(y = USREC/3, color = "USREC"), size = 1)+
        labs(x = 'Date',
@@ -936,6 +936,8 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
 ```
 
 ```{r}
+library(rugarch)
+library(fGarch)
 
 x = cbind(month_ret_tot$date,month_ret_tot$ret_mont_top) %>% as.data.frame()
 x$V1 = x$V1 %>% as.Date()
@@ -956,20 +958,26 @@ row.names(x) = x$V1
 x = x#[72:nrow(x),]
 ts_sp_test = ts(x[3], start = c(2000,10), frequency = 12 )
 
-garchspec <- ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")
+garchspec <- ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), distribution.model = "sstd")
 
-cl = makePSOCKcluster(25)
+
+
+cl = makePSOCKcluster(14)
 
 gjrgarchroll <- ugarchroll(garchspec, data = ts_sp_test, n.start = 12,
                         refit.window = "moving", 
                         refit.every = 6,
                         cluster = cl,)  # initates cluster computing)
-show(ugarch_roll)
+show(gjrgarchroll)
 stopCluster(cl)
-plot(ugarch_roll)
+plot(gjrgarchroll)
 
 garchfit <- ugarchfit(data = ts_sp_test, spec = garchspec)
-round(coef(garchfit)[1:2], 4)
+round(coef(garchfit),4)
+
+coef(garchfit)
+garchfit@fit$sigma
+
 plot(fitted(garchfit))
 ```
 
@@ -1176,10 +1184,89 @@ month_ret_tot$lambda = month_ret_tot$sp500_vol / sqrt(wml_chris$forcast_2) %>% a
 
 #### Now we can finaly get the weights 
 
-wml_chris$weights_forcast = (1/month_ret_tot$lambda) * (wml_chris$forcast / wml_chris$forcast_2)
+wml_chris$weights_forcast = (1/2*(month_ret_tot$lambda)) * (wml_chris$forcast / wml_chris$forcast_2)
 wml_chris$weights_forcast
 
 ```
+
+```{r}
+#so we need to make rolling variance first
+
+var(sp500_dates$return)
+
+ts_sp500_v1 = sp500_dates %>% dplyr::select(return,date) 
+ts_sp500_v1 = ts_sp500_v1 %>% ungroup() %>% dplyr::select(-c(symbol))
+
+a = c(0,0,0,0,0) %>% as.matrix
+rollinvar = rollapply(sp500_dates$return, width = 6, by = 1, FUN = "var") %>% as.tibble()
+
+colnames(a)[1] = "value" 
+matchroll = rbind(a,rollinvar)
+
+y_hat0 = 1.973
+y_int = -0.397
+
+wml_chris = wml_chris %>% mutate(yhat = y_hat0)
+wml_chris = wml_chris %>% mutate(yint = y_int)
+wml_chris = wml_chris %>% mutate(roll_6_var = matchroll$value)
+
+wml_chris$roll_6_var %>% plot(type = "l")
+# Bear indicator = USREC 
+wml_chris[28:ncol(wml_chris)]
+
+errorterm = 0 # Expected value of noise
+
+wml_chris$r_hat = wml_chris$yhat + (wml_chris$yint * wml_chris$USREC * wml_chris$roll_6_var) + errorterm
+
+```
+
+```{r}
+ts_sp = ts(month_ret_tot[2], start = c(2000,10), frequency = 12 )
+
+garchspec = ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), 
+                        variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), 
+                        distribution.model = "sstd")
+
+
+garchfit = ugarchfit(data = ts_sp, spec = garchspec)
+
+round(coef(garchfit),4)
+
+garchfit
+
+coefs = coef(garchfit)
+garchfit@fit$sigma
+
+plot(fitted(garchfit))
+```
+
+```{r}
+
+wml_chris$garch_res = garchfit@fit$residuals
+
+
+wml_chris$binary_error[wml_chris$garch_res > 0] = 0
+wml_chris$binary_error[sapply(wml_chris$binary_error, is.na)] = 1 # 
+
+sigma_garch = coefs[3] + (coefs[5]*wml_chris$roll_6_var) + (coefs[4] + coefs[6] * wml_chris$binary_error) * wml_chris$garch_res^2 
+
+sigma_roll = roll_regres(norm_ret_mont_top ~ norm_sp500_ret, month_ret_tot, width = 6, #Beta top vs SP500, 6 month window
+            do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
+
+
+a = c(0,0,0,0,0) %>% as.matrix
+colnames(a)[1] = "value" 
+roll_6_month_var = rollapply(temp_top_ret$ret_mont_top, width = 6, by = 1, FUN = "var") %>% as.tibble()
+matchroll = rbind(a,roll_6_month_var)
+
+
+
+sigma22 = 0.001 + sigma_garch *0.6114 + sigma^ of last 6 month rolling windown  
+
+```
+
+
+
 
 
 
