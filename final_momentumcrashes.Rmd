@@ -12,8 +12,7 @@ editor_options:
 # NOTE TO READER 
 # 
 # This dataset has survivorship biases in it! As we we dont take into considiration when stocks are leaving or not
-# Additionaly due to the date (2000+) bot performs very well due to the bounce back from the momentum crash of the dotcom bubble! 
-# I chose to hold it there so we could see it
+# Remember to clean ram and restart R when running the code to avoid errors each time its run.
 
 ```{r, packloading}
 library(dplyr)
@@ -21,15 +20,41 @@ library(tidyquant)
 library(tidyverse)
 library(plyr)
 ```
+#
+# If used on SP500, remember to use line 56 instead of line 54. This is becouse of different data structures. 
+#
 
 ```{r, read data}
 library(readr)
 
-df = read_csv2("sp500.csv",col_names = TRUE, col_types = cols(`date` = col_character(), #Loading the data 
-        `mcap` = col_number(), `close` = col_number(), 
-        `tot_ret` = col_number()))
+df = read_delim("db_dat/asx200.csv",  ";", escape_double = FALSE, locale = locale(decimal_mark = ","), na = "NA", trim_ws = TRUE)
 
+# MSCI CANADA DOES NOT WORK 
+# Tickers to implement
+# ^STOXX Euro stoxx 600 SHIT DATA SCRAP IT !!!!
+# ^GSPC = SP500 WORKS
+# ^AXJO = Australian SP 200 WORKS
+# ^N225 = Nikkei 225 Japan,ERRORS IN NIKKEI BAD DATASET! 
+# ^HSI = HSI 225 Hong Kong,ERRORS IN HSI BAD DATASET! 
+
+index_use = c("^AXJO") # Select the index to load here 
+
+names(df)[1]  = "date" # Change the name of col 2 
 names(df)[2]  = "symbol" # Change the name of col 2 
+names(df)[3]  = "tot_ret" # Change the name of col 2 
+names(df)[4]  = "mcap" # Change the name of col 2 
+names(df)[5]  = "close" # Change the name of col 2 
+
+df$date =  as.Date(df$date, format = "%Y-%m-%d")
+df$symbol = df$symbol %>% as.character() 
+
+df$tot_ret = as.numeric(gsub(",",".",df$tot_ret,fixed=TRUE))
+
+df$mcap = gsub('\\s+', '', df$mcap) %>% as.numeric() # Use this when using all other datasets.
+
+#df$mcap = as.numeric(gsub(",",".",df$mcap,fixed=TRUE)) # ONLY USE THIS IF SP500 dataset, this is becouse the input is different
+
+df$close = as.numeric(gsub(",",".",df$close,fixed=TRUE))
 
 df[is.na(df)] = 0 # Set NAs to zero 
 
@@ -128,6 +153,7 @@ test = NULL # Put test df to null
 # We can get data that is calculated to inf! this is due to the table sometimes provides us with nothing to calculate to or from \ incase a delesting etc. Therefor we have to convert info to get Zero as a value, if we filter out inf we will remove to many returns! 
 
 library(matrixStats)
+library(R.utils)
 
 table_scrubber = function() { # Making a table scrubber function 
   df[7:17] = na_if(df[7:17], 0) # Setting NAs in mom_X columns to zero 
@@ -137,14 +163,21 @@ table_scrubber = function() { # Making a table scrubber function
 
 #This is done to get clear tables, to use the functions below as we will count real values
 
-table_scrubber() #Runs the function 
-df$available_returns = rowSums(!is.na(df[7:17])) # compute number of available returns from mom_x (The rankings )
+#table_scrubber() #Runs the function 
+
+df[7:17] = na_if(df[7:17], FALSE)
+x = !isZero(df[7:17])
+x = tidyr::replace_na(x, 0)
+y = rowSums(x) %>% tibble()
+df = cbind(df,y)
+colnames(df)[NCOL(df)] = "available_returns"
 
 df$cum_return = matrixStats::rowProds(1+as.matrix(df[7:17]), na.rm=T) %>% log() #Creating cumalative returns as logs 
 
 table_scrubber() # Just makeing sure my data is nice and shiny 
-
+y = NULL
 devtools::unload("matrixStats") # Unload old pack not needed anymore
+devtools::unload("R.utils")
 ```
 
 ```{r, actual ranking, over 8 month returns, normalizing values for quantiles}
@@ -237,31 +270,33 @@ mid_1 = df %>% dplyr::filter(quantile == 5) %>% arrange(date)  # med performance
 bot_1 = df %>% dplyr::filter(quantile == 1) %>% arrange(date)  # worst performance portfolio based 
 ```
 
-```{r, retriving market index for sp500, cleaning and formating, THIS NEEDS TUNING IF CHANGE OF DATES!}
-# We need the SP500, this is downloaded from the internett, then processed to match our data. 
-## CREATING A MONTHLY DATASET for SP500!
+```{r, retriving market index for index, cleaning and formating, THIS NEEDS TUNING IF CHANGE OF DATES!}
+# We need the index, this is downloaded from the internett, then processed to match our data. 
+## CREATING A MONTHLY DATASET for index!
 ##
 library(bsts)
 library(openair)
 
 from = today() - years(40) #Takes from "today" and retrives 40 years of history
- 
-sp500 = tq_get(c("^GSPC"), get = "stock.prices", from = from) %>% #Get index prices (GSPC is SP500)
+  
+index = tq_get(index_use, get = "stock.prices", from = from) %>% #Get index prices (GSPC is index)
     group_by(symbol)
 
 
-sp500$date =  as.Date(sp500$date, format = '%Y-%m-%d') # Changeing date format 
+index$date =  as.Date(index$date, format = '%Y-%m-%d') # Changeing date format 
 
-sp500 = dplyr::filter(sp500, date > portstart_date) # Filters out the dates to match our main dataset 
+index = dplyr::filter(index, date > portstart_date) # Filters out the dates to match our main dataset 
 
-month_day = LastDayInMonth(sp500$date) %>% unique() %>% as.Date() # Retrives all last day in month, as we need the monthly data 
+month_day = LastDayInMonth(index$date) %>% unique() %>% as.Date() # Retrives all last day in month, as we need the monthly data 
 
-sp500 = sp500 %>% group_by(symbol) # group by symbol 
+index = index %>% group_by(symbol) # group by symbol 
 
 selecter = c("symbol", "date", "close") # Variables to have in top and bot tibble
-sp500 = dplyr::select(sp500,all_of(selecter)) # Select the cols we want to work with 
+index = dplyr::select(index,all_of(selecter)) # Select the cols we want to work with 
 
-sp500[1] = "SP500" # Rename all colls in the sp500 to sp500 for uniqeness 
+
+index_name = index[1,1] # Retrives the index name
+index[1] = index_name # Rename all cols in the index to name of the index for uniqueness 
 
 date_filter = function(portfolio) { # Filter function creation. This is to create final day of the month 
   counter = 0
@@ -275,7 +310,7 @@ date_filter = function(portfolio) { # Filter function creation. This is to creat
   temp_holder2 = NULL
   temp_holder3 = NULL
   pb = txtProgressBar(min = 0, max = years, initial = 0, style = 3) # progress bar
-  for (i in 1:years) { # For every year in the sp500 do this 
+  for (i in 1:years) { # For every year in the index do this 
     year_counter = (start_year + counter) ###############HARDCODED 2000 NEEDS TO BE CHANGED ACCORDING TO YEAR! ###########
     x = selectByDate(portfolio, year = year_counter ) # Select each year 
     counter = counter + 1
@@ -291,18 +326,18 @@ date_filter = function(portfolio) { # Filter function creation. This is to creat
   return(temp_holder2) # Output
 }
 
-sp500 = date_filter(sp500) # Filters 
+index = date_filter(index) # Filters 
 
-sp500 = sp500 %>% arrange(date) # arrange dates again 
+index = index %>% arrange(date) # arrange dates again 
 
-sp500$return = ((lead(sp500$close) - sp500$close)  / sp500$close) # New col with returns 
+index$return = ((lead(index$close) - index$close)  / index$close) # New col with returns 
 
-sp500[is.na(sp500)] = 0 # Scrubbing 
-sp500[sapply(sp500, is.infinite)] = 0 #Scrubbing 
+index[is.na(index)] = 0 # Scrubbing 
+index[sapply(index, is.infinite)] = 0 #Scrubbing 
 
-sp500$cum_ret = cumprod(1 + sp500$return) # Create cumalative returns based on the SP500 
+index$cum_ret = cumprod(1 + index$return) # Create cumalative returns based on the index 
 
-sp500 = sp500 %>% dplyr::filter(cum_ret != 0) %>% dplyr::filter(cum_ret != 1) # cannot have 0 or 1 in cumalative return 
+index = index %>% dplyr::filter(cum_ret != 0) %>% dplyr::filter(cum_ret != 1) # cannot have 0 or 1 in cumalative return 
 # This is due to how we calculate returns, as first month does not have returns to calculate from 
 
 devtools::unload("bsts") 
@@ -322,8 +357,6 @@ bot = dplyr::select(bot_1,all_of(selecter)) # Selects from selecter
 cumalative_ret_portfolio = function (portfolio){ # Defining function
 reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
 tot_ret = c() # empty vector 
-sum_w = 0
-temp = 0 
   for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
     if (i == 1){  # First round do this 
       z = portfolio %>% dplyr::filter(reb_month[i] == portfolio$date) # Select the first date on the list, filter out the rest 
@@ -469,7 +502,7 @@ ff_data$date = ff_data$date  %>% as.Date()
 ### MATCHING DATES AGAIN TO MAKE SURE ITS IN ORDER!!!!! I HATE DATES !!!! 
 day(total_score$date) = days_in_month(total_score$date) # to match up with ff_dates
 day(total_score$date) = days_in_month(total_score$date)  
-day(sp500$date) = days_in_month(sp500$date) 
+day(index$date) = days_in_month(index$date) 
 ```
 
 ```{r, converting FF data to percentages}
@@ -501,21 +534,21 @@ total_score$date = total_score$date %>% as.Date() # just making sure dates are i
 #ff_data = ff_data %>% arrange(date) %>% filter(date <= total_score$date[1])
 ff_dates = locate_ffdates(ff_data) #using the function on the FF data to get Risk free return and other data
 
-sp500_dates = locate_ffdates(sp500)
+index_dates = locate_ffdates(index)
 
 selecter = c("date", "cum_ret") # Variables to have in top and bot tibble
-sp500_dates2 = sp500_dates %>% ungroup() %>%  dplyr::select(all_of(selecter))
-names(sp500_dates2)[2] = "sp500_cumret" 
+index_dates2 = index_dates %>% ungroup() %>%  dplyr::select(all_of(selecter))
+names(index_dates2)[2] = "index_cumret" 
   
 total_score = merge(total_score, ff_dates, by.x="date", by.y="date") # Moving the dates into total_score df
-total_score = merge(total_score, sp500_dates2, by.x="date", by.y="date")
+total_score = merge(total_score, index_dates2, by.x="date", by.y="date")
 ```
 
 ## As previously mentioned the BOT performs very well. But this is due to the dotcom momentum bounce, then the 2008/2009 crash ! 
 
 ```{r, graphing the end returns}
 # Visualization of the scores 
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , "sp500" = "red", "mid" = "brown")
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , "index" = "red", "mid" = "brown")
 # This top part is just to have a nice legend on the side of the graph 
 
 total_score$date = total_score$date %>% as.Date()  # Make sure dates are DATES ! 
@@ -525,11 +558,11 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = mid, color = "mid"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
+       geom_line(aes(y = index_cumret, color = "index"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,15,1)) +
+    scale_y_continuous(breaks = seq(0,50,10)) +
     scale_x_date(date_breaks = '2 year',
                date_labels = '%Y',) +
     scale_color_manual(values = colors)
@@ -546,8 +579,8 @@ total_score$cu_ff_rf =  cumprod(1+total_score$ff_rf)
 
 ```{r, plotting with some ff data}
 # Just adding some more data to investigate 
-# Do note that SP500 and cumulated fama french market and risk free rate is very similar.
-colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", "sp500" = "black")
+# Do note that index and cumulated fama french market and risk free rate is very similar.
+colors <- c("top" = "blue", "bot" = "orange", "wml" = "green" , " cu_ff_mkt_rf" = "red", "index" = "black")
 total_score$date = total_score$date %>% as.Date()  
 
 ggplot(total_score, aes(x = date)) + # Uses main dataset
@@ -556,11 +589,11 @@ ggplot(total_score, aes(x = date)) + # Uses main dataset
        #geom_line(aes(y = mid, color = "mid"), size = 1) + 
        geom_line(aes(y = wml, color = "wml"), size = 1) + 
        geom_line(aes(y = cu_ff_mkt_rf , color = " cu_ff_mkt_rf"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
+       geom_line(aes(y = index_cumret, color = "index"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
        title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,10,1)) +
+    scale_y_continuous(breaks = seq(0,50,1)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
@@ -610,8 +643,8 @@ names(month_ret_tot)[4] = "ret_mont_mid"
 
 month_ret_tot = month_ret_tot %>% arrange(date)
 
-month_ret_tot = cbind(month_ret_tot,sp500_dates$return)
-names(month_ret_tot)[5] = "sp500_ret"
+month_ret_tot = cbind(month_ret_tot,index_dates$return)
+names(month_ret_tot)[5] = "index_ret"
 
 month_ret_tot = month_ret_tot %>% relocate(date, .before = ret_mont_top) # OCD kicking in, moving date to front col 
 
@@ -620,14 +653,14 @@ month_ret_tot %>% head()
 
 ```{r, making some time series for later}
 
-ts_sp500_ret = ts(sp500_dates$return, start = c(start_year, 1), freq = 12) # Creating time series
+ts_index_ret = ts(index_dates$return, start = c(start_year, 1), freq = 12) # Creating time series
 ts_top_ret = ts(month_ret_tot$ret_mont_top , start = c(start_year, 1), freq = 12)
 ts_mid_ret = ts(month_ret_tot$ret_mont_mid , start = c(start_year, 1), freq = 12)
 ts_bot_ret = ts(month_ret_tot$ret_mont_bot , start = c(start_year, 1), freq = 12)
 ```
 
 ```{r, adding betas for alpha calculation}
-beta = cov(ts_top_ret, ts_sp500_ret)/var(ts_sp500_ret) # This is equal to the one above, to check the function! 
+beta = cov(ts_top_ret, ts_index_ret)/var(ts_index_ret) # This is equal to the one above, to check the function! 
 total_score$alpha = ts_top_ret - total_score$ff_rf - beta * (total_score$ff_mkt_rf - total_score$ff_rf) # calculating alpha.
 ```
 
@@ -648,24 +681,24 @@ normalizefunc = function(portfolio, colnumb){ # Making the normf. funk
 month_ret_tot$norm_ret_mont_top = normalizefunc(month_ret_tot, 2)  # Normalizing 
 month_ret_tot$norm_ret_mont_bot = normalizefunc(month_ret_tot, 3)
 month_ret_tot$norm_ret_mont_mid = normalizefunc(month_ret_tot, 4)
-month_ret_tot$norm_sp500_ret = normalizefunc(month_ret_tot, 5)
+month_ret_tot$norm_index_ret = normalizefunc(month_ret_tot, 5)
 
 month_ret_tot$norm_ret_mont_top = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_top))) # Unlisting etc becouse we need to 
 month_ret_tot$norm_ret_mont_bot = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_bot))) # Or else we have problems regressing
 month_ret_tot$norm_ret_mont_mid = as.numeric(as.character(unlist(month_ret_tot$norm_ret_mont_mid))) 
-month_ret_tot$norm_sp500_ret = as.numeric(as.character(unlist(month_ret_tot$norm_sp500_ret)))
+month_ret_tot$norm_index_ret = as.numeric(as.character(unlist(month_ret_tot$norm_index_ret)))
 
 month_ret_tot[sapply(month_ret_tot, is.infinite)] = 0.99999 # Dummy encoding since log cant be 0 or 1 we convert to dummy vars 
 month_ret_tot[month_ret_tot == 0] <- 0.000001 # Dummy encoding
 month_ret_tot[month_ret_tot == 1] <- 0.999999 # Dummy encoding
 
-reg_top = roll_regres(norm_ret_mont_top ~ norm_sp500_ret, month_ret_tot, width = 6, #Beta top vs SP500, 6 month window
+reg_top = roll_regres(norm_ret_mont_top ~ norm_index_ret, month_ret_tot, width = 6, #Beta top vs index, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
-reg_bot = roll_regres(norm_ret_mont_bot ~ norm_sp500_ret, month_ret_tot, width = 6, #Beta top vs SP500, 6 month window
+reg_bot = roll_regres(norm_ret_mont_bot ~ norm_index_ret, month_ret_tot, width = 6, #Beta top vs index, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
-reg_mid = roll_regres(norm_ret_mont_mid ~ norm_sp500_ret, month_ret_tot, width = 6, #Beta top vs SP500, 6 month window
+reg_mid = roll_regres(norm_ret_mont_mid ~ norm_index_ret, month_ret_tot, width = 6, #Beta top vs index, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
 
@@ -675,7 +708,7 @@ reg_mid_sum = bind_cols(month_ret_tot$date ,as.data.frame(reg_mid$coefs))
 
 # names(month_ret_tot)[5] = "norm_ret_mont_top" # Renaming cols 
 # names(month_ret_tot)[6] = "norm_ret_mont_bot"
-names(month_ret_tot)[9] = "norm_ret_sp500"
+names(month_ret_tot)[9] = "norm_ret_index"
 
 names(reg_top_sum)[1] = "date" #renaming cols 
 names(reg_top_sum)[3] = "beta_top"
@@ -729,6 +762,7 @@ ggplot(data=total_score,aes(x=date)) + geom_line(aes(y=alpha, color="alpha"),col
   xlab("Date")+
   ylab("Alpha")
 ```
+
 # This is the US reccession indicator. This is just here to see that it plots correctly, as we will use it in some graphs later on 
 
 ```{r, bearmarket indicator}
@@ -739,7 +773,7 @@ rec_ind = read.csv("USREC.csv") #load
 rec_ind$date= rec_ind$DATE %>% as.Date() # dates are dates 
 rec_ind= dplyr::select(rec_ind, c(date, USREC)) # select what we need 
 
-day(rec_ind$date)<-days_in_month(rec_ind$date) #find last day in months, and set dates to our standard dates 
+day(rec_ind$date)=days_in_month(rec_ind$date) #find last day in months, and set dates to our standard dates 
 
 dates_rec_ind = locate_ffdates(rec_ind) #using the function from the FF data bind our dataset to the correct values 
   
@@ -786,7 +820,7 @@ lambda = BoxCox.lambda(decompose_ts_top) # lambda, this is here from a previous 
 
 
 ```{r, volatility calculations}
-# Calculating volatility for our portfolios 
+# Calculating volatility for our portfolios over 6 month, with a N=12 (meaning months in our instance)
 
 vol_calc = function (data){
   out = volatility(data, n = 6, calc = "close", N = 12, mean0 = FALSE)
@@ -794,32 +828,34 @@ vol_calc = function (data){
 }
 
 month_ret_tot$top_vol = vol_calc(month_ret_tot$norm_ret_mont_top)
-month_ret_tot$sp500_vol =  vol_calc(month_ret_tot$norm_ret_sp500)
+month_ret_tot$index_vol =  vol_calc(month_ret_tot$norm_ret_index)
 month_ret_tot$bot_vol = vol_calc(month_ret_tot$norm_ret_mont_bot)
 
 ```
 
-```{r, making time-series of sp500 for testing}
+```{r, making time-series of index for testing}
 # Some of the functions require us to use timeseries, therefor we convert them here 
 
-temp_sp500_ret = month_ret_tot %>% dplyr::select("sp500_ret","date") %>% arrange(date)
-temp_close_sp = sp500_dates  %>% ungroup() %>% dplyr::select("close","date") %>% arrange(date)
-temp_sp500_rvol = month_ret_tot %>%  dplyr::select("sp500_vol","date") %>% arrange(date)
+temp_index_ret = month_ret_tot %>% dplyr::select("index_ret","date") %>% arrange(date)
+temp_close_sp = index_dates  %>% ungroup() %>% dplyr::select("close","date") %>% arrange(date)
+temp_index_rvol = month_ret_tot %>%  dplyr::select("index_vol","date") %>% arrange(date)
 
-row.names(temp_sp500_rvol) = temp_sp500_rvol$date
+row.names(temp_index_rvol) = temp_index_rvol$date
 row.names(temp_close_sp) = temp_close_sp$date
-row.names(temp_sp500_ret) = temp_sp500_ret$date
+row.names(temp_index_ret) = temp_index_ret$date
 
 # temp_close_sp = temp_close_sp %>% dplyr::select(-c("date"))
-# temp_sp500_ret = temp_sp500 %>% dplyr::select(-c("date")) # Used for bugfixing, removing the date column 
-# temp_sp500_rvol = temp_sp500_rvol %>% dplyr::select(-c("date"))
+# temp_index_ret = temp_index %>% dplyr::select(-c("date")) # Used for bugfixing, removing the date column 
+# temp_index_rvol = temp_index_rvol %>% dplyr::select(-c("date"))
 
-ts_sp500_close = ts(temp_close_sp[,1], start = c(start_year, 10), freq = 12) # closing prices
-ts_sp500_ret = ts(temp_sp500_ret[,1], start = c(start_year, 10), freq = 12) # returns  
-ts_sp500_rvol = ts(temp_sp500_rvol[,1], start = c(start_year, 10), freq = 12) # real volatility
+ts_index_close = ts(temp_close_sp[,1], start = c(start_year, 10), freq = 12) # closing prices
+ts_index_ret = ts(temp_index_ret[,1], start = c(start_year, 10), freq = 12) # returns  
+ts_index_rvol = ts(temp_index_rvol[,1], start = c(start_year, 10), freq = 12) # real volatility
 ```
 
 
+# Fitting Garch model
+we fit this garch to investigate a fixed volatility strategy.
 ```{r}
 library(rugarch)
 # Importing our garch model to fit the data on, in this case we use the return of top portfolio 
@@ -847,16 +883,18 @@ devtools::unload("rugarch") # Dropping the pack
 ```
 
 # 
-# This section has been modified, this was done since i could not implement the dynamic gjr weighting. 
-# The value border was based on the prevoius from garchvolatility, then it was refined manualy. 
-# 
+# Fixed "dynamic" weights volatility 
+We set set the dynamic weights to a set interval based on ploted garch vol from last chunk. 
+Even though we are not able to circumvent the drop, we join bottom portfolio to the downside but we will also join its rebound
+after the rebound since the volitility has dropped, we continue to invest in top portfolio.
+ 
 ```{r, cumalative dynamic portfolio}
 #Here we we run for each month, if the volatility is higher then 2.22 we invest in bot portfolio and not top, then we take those returns 
 #next month and we reinvest them in another portfolio (rebalancing )
 cumalative_ret_dynamic = function (portfolio,portfolio2, gjr_vol){ # Defining function
   reb_month =  unique(portfolio$date) # finds each re-balancing months from the portfolio
   tot_ret = c() # empty vector 
-  border = 3 # Selecting our volitility cap 
+  border = 2.2 # Selecting our volitility cap 
     for (i in 1:length(reb_month)){ # for each date we have in the portfolio do this 
       if (i == 1){  
         if (gjr_vol[i,1] >= border){ # High volatility invest in bot portfolio 
@@ -902,8 +940,6 @@ dynamic %>% plot(type = "l") # fast plot to see outcome
 
 arrange(total_score,date) # Just making sure dates are in order before we move dynamic resaults into date 
 tot_score_final = cbind(total_score, dynamic) # binding it to our main table 
-
-tot_score_final %>% tail() # Checking data 
 ```
 
 
@@ -913,18 +949,18 @@ Here we can clearly see our "dynamic" is doing very well. HOWEVER, after investi
 Another finding is how "hard" the "dynamic" droped in 2009 as it would have higher volatility triggering the allocation to bot portfolio, therefor it most likely has the same shape as bot in the same timeframe. 
 
 ```{r}
-colors = c("top" = "blue", "bot" = "orange", "set_dynamic" = "green", "sp500" = "red", "USREC" = "purple")
+colors = c("top" = "blue", "bot" = "orange", "set_dynamic" = "green", "index" = "red", "USREC" = "purple")
 
 ggplot(tot_score_final, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = dynamic, color = "set_dynamic"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
+       geom_line(aes(y = index_cumret, color = "index"), size = 1)+
         geom_line(aes(y = USREC/3, color = "USREC"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
-       title = 'Portfolio Cumulative Returns') +
-    scale_y_continuous(breaks = seq(0,15,1)) +
+       title = 'Fixed "Dynamic" weights @ 2.3 vol') +
+    scale_y_continuous(breaks = seq(0,50,10)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
     scale_color_manual(values = colors)
@@ -941,31 +977,14 @@ y = x$V2
 
 
 x$norm_sp = (y-min(y))/(max(y)-min(y)) 
-#SP.wml = SP.wml[3]
 
-#x = x %>% arrange(V1)
 row.names(x) = x$V1
 
-
-#sp_test = cbind(SP.wml, DAXConst$X)
-#rownames(sp_test) = sp_test[[2]]
-#sp_test = sp_test[1:1]
-x = x#[72:nrow(x),]
+x = x
 ts_sp_test = ts(x[3], start = c(start_year,10), frequency = 12 )
 
 garchspec <- ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), distribution.model = "sstd")
 
-
-
-# cl = makePSOCKcluster(14)
-# 
-# gjrgarchroll <- ugarchroll(garchspec, data = ts_sp_test, n.start = 12,
-#                         refit.window = "moving", 
-#                         refit.every = 6,
-#                         cluster = cl,)  # initates cluster computing)
-# show(gjrgarchroll)
-# stopCluster(cl)
-# plot(gjrgarchroll)
 
 garchfit <- ugarchfit(data = ts_sp_test, spec = garchspec)
 round(coef(garchfit),4)
@@ -976,58 +995,10 @@ garchfit@fit$sigma
 plot(fitted(garchfit))
 ```
 
-## Chris stuff ------------------------------------------------- IDK what this is???
-
-```{r, 6 month forwardlooking returns?}
- # This creates 12 cols, these cols will tell you if you sold it today, what will be the return
-
- ret_1_6 = function (portfolio){ # Defining function
-   uniq_stocks =  unique(portfolio$symbol) # finds each stock to calc returns
-   temp_holder = 0 %>% as.data.frame()
-  temp_holder2 = 0 %>% as.data.frame()
-   temp_holder3 = 0 %>% as.data.frame()
-   count = 0
-   pb = txtProgressBar(min = 0, max = nrow(portfolio), initial = 0, style = 3) # progress bar
-    z = 0 %>% as.data.frame()
-   for (i in 1:nrow(portfolio)){ # for each date we have in the portfolio do this
-       z = portfolio[i,]
-       count = count + 1 # Adds 1 to the counter for progressbar
-       setTxtProgressBar(pb,count) # Starting the progress bar
-       for(j in 1:6) {
-         #temp_holder  = momentum(z$return, n=j)
-         temp_holder = portfolio$wml[6+j+count]
-         name = paste0("mom", sep = "_", j)
-         z[[name]] =  temp_holder
-         if (j == 6){
-           temp_holder2  = bind_rows(temp_holder2, z)
-         }
-      }
-     }
-   return(temp_holder2)
- }
-
- test  = ret_1_6(total_score)
- test = test %>% dplyr::distinct(date, .keep_all = T)
-
- wml_chris = test %>% slice(-c(1)) # Due to bind with one Zero, there is a redundant row, this is removed here.
- test = NULL
-```
-
-```{r, forcast calculations}
- # Return forcast !
-
-wml_chris$forcast = (wml_chris$mom_6 / wml_chris$mom_1)^(1/6)
-
- wml_chris$forcast = ((wml_chris$forcast - 1)*100) # n[t-1]
-
- wml_chris$forcast_2 = ((((wml_chris$forcast)^2 - wml_chris$forcast)^2)) #sigma^2[t-1]
-
- wml_chris %>% head()
-```
-
-
 ```{r}
-ts_sp = ts(month_ret_tot$norm_ret_sp500, start = c(start_year,10), frequency = 12 )
+index_tables = total_score
+
+ts_sp = ts(month_ret_tot$norm_ret_index, start = c(start_year,10), frequency = 12 )
 
 garchspec = ugarchspec(mean.model = list(armaOrder = c(0, 0), archm = TRUE, archpow = 2), 
                         variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), 
@@ -1061,13 +1032,13 @@ vol_calc = function (data,period){
 width = 6
 
 x = vol_calc(month_ret_tot$norm_ret_mont_top,width)
-wml_chris$top_vol_6 = x$value
+index_tables$top_vol_6 = x$value
 
-x = vol_calc(month_ret_tot$norm_ret_sp500,width)
-wml_chris$sp500_vol_6 = x$value
+x = vol_calc(month_ret_tot$norm_ret_index,width)
+index_tables$index_vol_6 = x$value
 
 x = vol_calc(month_ret_tot$norm_ret_mont_bot,width)
-wml_chris$bot_vol_6 = x$value
+index_tables$bot_vol_6 = x$value
 ```
 
 ```{r}
@@ -1081,16 +1052,16 @@ forward_vol_calc = function (data){
   return(out2)
 }
 
-wml_chris$f_top_vol = forward_vol_calc(month_ret_tot$norm_ret_mont_top)
+index_tables$f_top_vol = forward_vol_calc(month_ret_tot$norm_ret_mont_top)
 ```
 
 ```{r}
  
 a_constant = rep(1, nrow(month_ret_tot))
 
-reg_ftop_sigma = lm(wml_chris$f_top_vol ~ garchfit@fit$sigma)
-reg_ftop_126 = lm(wml_chris$f_top_vol ~ wml_chris$top_vol_6)
-reg_ftop_cons = lm(wml_chris$f_top_vol ~ a_constant)
+reg_ftop_sigma = lm(index_tables$f_top_vol ~ garchfit@fit$sigma)
+reg_ftop_126 = lm(index_tables$f_top_vol ~ index_tables$top_vol_6)
+reg_ftop_cons = lm(index_tables$f_top_vol ~ a_constant)
 
 summary(reg_ftop_sigma)
 summary(reg_ftop_126)
@@ -1100,11 +1071,11 @@ summary(reg_ftop_cons)
 
 ```{r}
 #so we need to make rolling variance first
-ts_sp500_v1 = sp500_dates %>% dplyr::select(return,date) 
-ts_sp500_v1 = ts_sp500_v1 %>% ungroup() %>% dplyr::select(-c(symbol))
+ts_index_v1 = index_dates %>% dplyr::select(return,date) 
+ts_index_v1 = ts_index_v1 %>% ungroup() %>% dplyr::select(-c(symbol))
 
 a = c(0,0,0,0,0) %>% as.matrix
-rollinvar = rollapply(sp500_dates$return, width = 6, by = 1, FUN = "var") %>% as.tibble()
+rollinvar = rollapply(index_dates$return, width = 6, by = 1, FUN = "var") %>% as.tibble()
 
 colnames(a)[1] = "value" 
 matchroll = rbind(a,rollinvar)
@@ -1112,19 +1083,19 @@ matchroll = rbind(a,rollinvar)
 y_hat0 = 1.973/100
 y_int = -0.397
 
-wml_chris = wml_chris %>% mutate(yhat = y_hat0)
-wml_chris = wml_chris %>% mutate(yint = y_int)
-wml_chris = wml_chris %>% mutate(roll_6_var = matchroll$value)
+index_tables = index_tables %>% mutate(yhat = y_hat0)
+index_tables = index_tables %>% mutate(yint = y_int)
+index_tables = index_tables %>% mutate(roll_6_var = matchroll$value)
 
-wml_chris$roll_6_var %>% plot(type = "l")
-wml_chris$f_top_vol %>% plot(type = "l")
+index_tables$roll_6_var %>% plot(type = "l")
+index_tables$f_top_vol %>% plot(type = "l")
 
 # Bear indicator = USREC 
-wml_chris[28:ncol(wml_chris)]
+index_tables[28:ncol(index_tables)]
 
 errorterm = 0 # Expected value of noise
 
-wml_chris$r_hat = wml_chris$yhat + (wml_chris$yint * wml_chris$USREC * wml_chris$sp500_vol_6 ) + errorterm
+index_tables$r_hat = index_tables$yhat + (index_tables$yint * index_tables$USREC * index_tables$index_vol_6 ) + errorterm
 
 ```
 
@@ -1133,22 +1104,22 @@ wml_chris$r_hat = wml_chris$yhat + (wml_chris$yint * wml_chris$USREC * wml_chris
 # Come back to this, we need daily to retrive variance for 22 days and 126 days 
 #
   
-wml_chris$garch_res = garchfit@fit$residuals
+index_tables$garch_res = garchfit@fit$residuals
   
   
-wml_chris$binary_error[wml_chris$garch_res > 0] = 0
-wml_chris$binary_error[sapply(wml_chris$binary_error, is.na)] = 1
+index_tables$binary_error[index_tables$garch_res > 0] = 0
+index_tables$binary_error[sapply(index_tables$binary_error, is.na)] = 1
   
 omega = coefs[3]
 beta = coefs[5]
 alpha = coefs[4]
 gamma = coefs[6]
   
-sigma_garch = omega + (beta*wml_chris$top ) + (alpha + gamma * wml_chris$binary_error) * wml_chris$garch_res^2 
+sigma_garch = omega + (beta*index_tables$top ) + (alpha + gamma * index_tables$binary_error) * index_tables$garch_res^2 
 
   
   
-sigma22 = 0.001 + sigma_garch * 0.6114 + wml_chris$top_vol_6 * 0.264
+sigma22 = 0.001 + sigma_garch * 0.6114 + index_tables$top_vol_6 * 0.264
   
 sig22mean = sigma22%>% mean() 
 
@@ -1160,7 +1131,7 @@ v = month_ret_tot$ret_mont_top %>% mean()
 
 scalar = (v / sig22mean)
 
-weights = (1/(2*scalar)) * (wml_chris$r_hat/sigma22) *100
+weights = (1/(2*scalar)) * (index_tables$r_hat/sigma22) *100
 weights %>% max() 
 weights %>% min()
 
@@ -1171,15 +1142,13 @@ weights %>% plot(type = "l")
 ```
 
 ```{r, cumalative returns for each portfolio calc, warning = FALSE}
-###
-### Calculates returns on specific portfolios, invest 1 dollar in time Zero and does compounding Value WEIGHTED
-###### e
-#top = dplyr::select(top_1,all_of(selecter)) # Selects from selecter
-
 mod_weights = weights %>% as_tibble()
 mod_weights$mod = weights %>% as.vector()
 
-#mod_weights$mod[mod_weights$value > 1] = 1
+#################### This part i still here for those who want to experiment with and without leverage effects 
+#################### Set modweights according to wishes.
+
+mod_weights$mod[mod_weights$value > 1] = 1
  
 #test = which(mod_weights$value < 1)
 
@@ -1249,7 +1218,7 @@ top_score_dyn$norm_score = normalizefunc(returns)
 top_score_dyn$norm_score[top_score_dyn$norm_score == 0] <- 0.000001 # Dummy encoding
 top_score_dyn$norm_score[top_score_dyn$norm_score == 1] <- 0.999999 # Dummy encoding
 
-reg_dyn = roll_regres(top_score_dyn$norm_score ~ month_ret_tot$norm_ret_sp500 , width = 6, #Beta top vs SP500, 6 month window
+reg_dyn = roll_regres(top_score_dyn$norm_score ~ month_ret_tot$norm_ret_index , width = 6, #Beta top vs index, 6 month window
             do_compute = c("sigmas", "r.squareds", "1_step_forecasts"))
 
 
@@ -1263,18 +1232,18 @@ colnames(tot_score_final)[ncol(tot_score_final)] = "dynamic_fancy"
 ```
 
 ```{r}
-colors = c("top" = "blue", "bot" = "orange", "set_dynamic" = "green", "sp500" = "red", "USREC" = "purple", "dynamic" = "black")
+colors = c("top" = "blue", "bot" = "orange", "set_dynamic" = "green", "index" = "red", "USREC" = "purple", "dynamic" = "black")
 
 ggplot(tot_score_final, aes(x = date)) + # Uses main dataset
        geom_line(aes(y = top, color = "top"), size = 1) +
        geom_line(aes(y = bot, color = "bot"), size = 1) + 
        geom_line(aes(y = dynamic, color = "set_dynamic"), size = 1) + 
-       geom_line(aes(y = sp500_cumret, color = "sp500"), size = 1)+
+       geom_line(aes(y = index_cumret, color = "index"), size = 1)+
        geom_line(aes(y = USREC/3, color = "USREC"), size = 1)+
        geom_line(aes(y = dynamic_fancy, color = "dynamic"), size = 1)+
        labs(x = 'Date',
        y = 'Cumulative Returns',
-       title = 'Monthly dynamic leverages possitive and negative direction') +
+       title = 'Monthly dynamic leverages only negative direction') +
     scale_y_continuous(breaks = seq(0,200,10)) +
     scale_x_date(date_breaks = '5 year',
                date_labels = '%Y') +
@@ -1287,7 +1256,7 @@ ggplot(tot_score_final, aes(x = date)) + # Uses main dataset
 
 ```{r, plotting log normalized beta}
 # Choose from and too dates here to zoom in on graph
-from_date = "2005-12-30" 
+from_date = "2008-12-30" 
 to_date = "2010-01-01"
 ##
 ##
@@ -1337,9 +1306,9 @@ table_formating = function(data,benchmark) {
   return(temp)
 }
 
-char_top = table_formating(ts_top_ret,ts_sp500_ret) %>% as_tibble()
-char_mid = table_formating(ts_mid_ret,ts_sp500_ret)%>% as_tibble()
-char_bot = table_formating(ts_bot_ret,ts_sp500_ret)%>% as_tibble()
+char_top = table_formating(ts_top_ret,ts_index_ret) %>% as_tibble()
+char_mid = table_formating(ts_mid_ret,ts_index_ret)%>% as_tibble()
+char_bot = table_formating(ts_bot_ret,ts_index_ret)%>% as_tibble()
 
 char_tot = rbind(char_top,char_mid,char_bot)
 char_tot = char_tot %>% mutate (name = c("top","mid","bot"))
