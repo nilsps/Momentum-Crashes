@@ -1179,7 +1179,7 @@ weights %>% plot(type = "l")
 mod_weights = weights %>% as_tibble()
 mod_weights$mod = weights %>% as.vector()
 
-mod_weights$mod[mod_weights$value > 1] = 1
+#mod_weights$mod[mod_weights$value > 1] = 1
  
 #test = which(mod_weights$value < 1)
 
@@ -1288,7 +1288,7 @@ ggplot(tot_score_final, aes(x = date)) + # Uses main dataset
 ```{r, plotting log normalized beta}
 # Choose from and too dates here to zoom in on graph
 from_date = "2005-12-30" 
-to_date = "2020-01-01"
+to_date = "2010-01-01"
 ##
 ##
 reg_top_sum$date = reg_top_sum$date %>% as.Date() # Becouse sometimes it just wants to be reminded its a date.....
